@@ -5,9 +5,11 @@ description: Workflow for every ticket — own branch, own worktree, PR-based me
 
 # Ticket flow: branch per ticket, merge by PR
 
-Main is integration-only. No agent commits to main, no agent pushes to
-main, and the pre-commit guard already refuses commits in the canonical
-checkout. Every piece of work travels the same path:
+Main is integration-only: no agent pushes to main, ever. CI runs on every
+PR and a red check means the PR does not merge. (Server-side branch
+protection needs a public repo or a paid plan; it lands with the
+main-branch-protection ticket once the repo can go public.) Every piece
+of work travels the same path:
 
 ```
 ticket → worktree+branch → commits → push branch → PR → human merges
@@ -15,49 +17,57 @@ ticket → worktree+branch → commits → push branch → PR → human merges
 
 ## 1. Start a ticket
 
+Look at `servitor board` first. A card that is already `active` shows
+`active_by` and `active_since`: do not start a card active under another
+actor — coordinate or pick another card. That is the only mutex agents
+on different machines can see.
+
 ```bash
-servitor set <ref> --status active          # claim the card — the cross-machine mutex
-REPO=$(git -C <canonical> rev-parse --show-toplevel)
-TREE="$(dirname $REPO)/$(basename $REPO)-worktrees/<ticket-slug>"
-BRANCH="agent/<agentname>/<ticket-slug>"
-git -C "$REPO" fetch origin
-git -C "$REPO" worktree add -b "$BRANCH" "$TREE" origin/main
-cd "$TREE"
-printf '%s\n' "pid=$$ branch=$BRANCH" > .claim
+servitor set <ref> --status active
+git fetch origin
+git worktree add -b agent/<agentname>/<ticket-slug> ../servitor-worktrees/<ticket-slug> origin/main
+cd ../servitor-worktrees/<ticket-slug>
 ```
 
 One branch per ticket, named for the ticket slug — not for the task
 du jour. If the work outgrows the ticket, split the ticket, then split
-the branch. Branch and worktree die together at merge time.
+the branch. Branch and worktree die together at merge time. The
+canonical checkout stays on main and takes no edits.
 
 ## 2. Work
 
 All commits happen in the worktree, on the branch. Small commits, honest
-messages. If you fix something unrelated, it goes in its own branch off
-main with its own PR — never rides along (the a1e127d lesson).
+messages. Stage files by name, never `git add -A` or `git add .`: a
+half-committed change (a state file without its consumers, a stray test
+file riding along) is exactly what that shortcut produces. If you fix
+something unrelated, it goes in its own branch off main with its own PR.
 
 ## 3. Open the PR — do not push to main
 
 ```bash
 git fetch origin && git rebase origin/main   # in YOUR tree, before every push
-git push origin "$BRANCH"                    # branch push only, never main
-gh pr create --base main --head "$BRANCH" \
-  --title "<ticket-slug>: <one-line what>" \
-  --body "Ticket: <ULID/slug>. What changed, how it was verified, what to eyeball."
+git push origin agent/<agentname>/<ticket-slug>
 ```
+
+Open the PR against main with `gh pr create` or on GitHub: title
+`<ticket-slug>: <one-line what>`, body naming the ticket, what changed,
+how it was verified, and what to eyeball. CI runs vite build, go build,
+go vet and go test on every PR; a red check blocks the merge.
 
 The PR is the presentation: it is what the human reviews and merges.
 Work summaries in chat do not replace the PR, and PRs do not merge
 themselves — merging is a human act (or an agent's, only on explicit
-human instruction naming the PR).
+human instruction naming the PR). Push rejected because origin/main
+moved? Rebase your branch and push again; never force-push.
 
 ## 4. Merge and clean up
 
 After the human merges:
 
 ```bash
-git -C "$REPO" fetch origin && git -C "$REPO" worktree remove --force "$TREE"
-git -C "$REPO" branch -D "$BRANCH"
+git -C <canonical> fetch origin
+git -C <canonical> worktree remove --force ../servitor-worktrees/<ticket-slug>
+git -C <canonical> branch -D agent/<agentname>/<ticket-slug>
 servitor log <ref> note "PR #N merged; branch + worktree released."
 ```
 
@@ -76,17 +86,5 @@ done, release the worktree and branch, and log the merge.
 
 ## Exceptions
 
-- **Trivial hotfix with human approval**: still a branch + PR. There is
-  no tier small enough to skip it — the guard enforces the worktree
-  part, and review enforces the rest.
-- **SERVITOR_ALLOW_CANONICAL=1**: exists for human-directed exceptions
-  only (e.g. repairing this workflow itself). Using it without a human
-  explicitly directing it is a violation, not a shortcut.
-
-## Cross-machine notes
-
-Other agents work from other clones. The only shared ground is
-origin/main; `.claim` files are invisible across machines. Card
-claiming (step 1) is the only mutex they can see. Push rejection means
-rebase your branch onto origin/main and push the branch again — never
-force-push, never rewrite others' commits.
+Trivial hotfix with human approval: still a branch + PR. There is no
+tier small enough to skip it — the PR is where review happens.
