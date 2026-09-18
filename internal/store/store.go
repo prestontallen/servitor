@@ -70,8 +70,18 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{Pool: pool}, nil
 }
 
-// ApplySchema creates the full schema on a fresh database.
+// ApplySchema creates the full schema on a fresh database. If the schema is
+// already present (ledger table exists) it is a no-op — full migrations are
+// not implemented yet.
 func (s *Store) ApplySchema(ctx context.Context) error {
+	var exists bool
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT to_regclass('public.ledger') IS NOT NULL`).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
 	b, err := schemaFS.ReadFile("schema.sql")
 	if err != nil {
 		return err

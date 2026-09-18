@@ -1,0 +1,15 @@
+[Unit]
+Description=servitor worklog API daemon
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/servitord
+Environment=SERVITOR_DSN=postgres://postgres:psql@localhost:5432/servitor?sslmode=disable
+Environment=SERVITOR_ADDR=0.0.0.0:8181
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

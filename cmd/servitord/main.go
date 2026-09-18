@@ -14,6 +14,24 @@ import (
 )
 
 func main() {
+	// servitord apply-schema: create/repair the schema on SERVITOR_DSN, then exit.
+	if len(os.Args) > 1 && os.Args[1] == "apply-schema" {
+		dsn := os.Getenv("SERVITOR_DSN")
+		if dsn == "" {
+			dsn = "postgres://postgres:psql@localhost:5432/servitor?sslmode=disable"
+		}
+		ctx := context.Background()
+		s, err := store.Open(ctx, dsn)
+		if err != nil {
+			log.Fatalf("store open: %v", err)
+		}
+		if err := s.ApplySchema(ctx); err != nil {
+			log.Fatalf("apply schema: %v", err)
+		}
+		log.Println("schema applied")
+		return
+	}
+
 	dsn := os.Getenv("SERVITOR_DSN")
 	if dsn == "" {
 		dsn = "postgres://postgres:psql@localhost:5432/servitor?sslmode=disable"
