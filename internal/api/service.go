@@ -99,6 +99,8 @@ type Service interface {
 	Ctx(ctx context.Context, ref string) (json.RawMessage, error)
 	// Board returns queued/active/blocked cards in rank order (W2).
 	Board(ctx context.Context) ([]store.Card, error)
+	// Arcs lists arcs (tickets with members) with derived rollups.
+	Arcs(ctx context.Context) ([]store.ArcSummary, error)
 	// History returns one ticket's event timeline (W3).
 	History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error)
 	// Append applies one ledger event (the write path).

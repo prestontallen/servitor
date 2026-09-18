@@ -42,6 +42,18 @@ func (ss *StoreService) Board(ctx context.Context) ([]store.Card, error) {
 	return cards, nil
 }
 
+// Arcs lists arcs (tickets with members) with their derived rollups.
+func (ss *StoreService) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
+	arcs, err := ss.Store.Arcs(ctx)
+	if err != nil {
+		return nil, wrapUnreachable(err)
+	}
+	if arcs == nil {
+		arcs = []store.ArcSummary{}
+	}
+	return arcs, nil
+}
+
 func (ss *StoreService) History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error) {
 	id, err := ss.resolve(ctx, ref)
 	if err != nil {

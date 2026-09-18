@@ -75,6 +75,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", h.healthz)
 	mux.HandleFunc("GET /api/board", h.board)
+	mux.HandleFunc("GET /api/arcs", h.arcs)
 	mux.HandleFunc("GET /api/ticket/{ref}", h.ctx)
 	mux.HandleFunc("GET /api/ticket/{ref}/history", h.history)
 	mux.HandleFunc("POST /api/events", h.append)
@@ -185,6 +186,16 @@ func (h *HTTP) board(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(cards)
+}
+
+func (h *HTTP) arcs(w http.ResponseWriter, r *http.Request) {
+	arcs, err := h.Service.Arcs(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(arcs)
 }
 
 func (h *HTTP) history(w http.ResponseWriter, r *http.Request) {

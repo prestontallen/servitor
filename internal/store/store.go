@@ -275,6 +275,21 @@ func (s *Store) AppendEvent(ctx context.Context, e Event, expectUpdated time.Tim
 	return eventID, nil
 }
 
+// EventClass buckets every event kind into signal (a human- or
+// agent-chosen record: notes, decisions, gates, feedback) vs transition
+// (mechanical state movement: creates, status/field sets, subitem
+// bookkeeping, hook chatter). Unknown kinds are transitions — the store
+// treats unknown kinds as ledger-only verbatim, which is mechanical by
+// definition. Views group and weight by class.
+func EventClass(kind string) string {
+	switch kind {
+	case "note", "decision", "gate", "feedback":
+		return "signal"
+	default:
+		return "transition"
+	}
+}
+
 var ErrStaleWrite = errors.New("stale write: ticket changed since read")
 
 func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64) error {
@@ -314,14 +329,55 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			}
 			_, err := tx.Exec(ctx, `UPDATE tickets SET slug=$1 WHERE ulid=$2`, s, e.TicketULID)
 			return err
-		case "pr":
+		case "pr", "parent":
 			// v present => its value ("" = empty); absent => NULL (absent)
+			if field == "parent" && hasV {
+				s, _ := v.(string)
+				if s == "" {
+					return errors.New("parent requires a ticket ulid (or absent to clear)")
+				}
+				if s == e.TicketULID {
+					return errors.New("ticket cannot be its own parent")
+				}
+				// the parent must exist, and must not be a descendant of
+				// this ticket (cycle guard — a cycle would corrupt rollups).
+				// Walk UP from the proposed parent: if this ticket is among
+				// its ancestors, assigning would make it its own ancestor.
+				var n int
+				if err := tx.QueryRow(ctx,
+					`WITH RECURSIVE up AS (
+					   SELECT ulid, parent FROM tickets WHERE ulid=$2
+					   UNION ALL
+					   SELECT t.ulid, t.parent FROM tickets t JOIN up ON t.ulid=up.parent
+					 ) SELECT count(*) FROM up WHERE ulid=$1`,
+					e.TicketULID, s).Scan(&n); err != nil {
+					return err
+				}
+				if n > 0 {
+					return fmt.Errorf("parent %s would create a cycle", s)
+				}
+				tag, err := tx.Exec(ctx, `SELECT 1 FROM tickets WHERE ulid=$1`, s)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 0 {
+					return fmt.Errorf("unknown parent ticket %s", s)
+				}
+			}
 			if !hasV {
-				_, err := tx.Exec(ctx, `UPDATE tickets SET pr=NULL WHERE ulid=$1`, e.TicketULID)
+				q := `UPDATE tickets SET pr=NULL WHERE ulid=$1`
+				if field == "parent" {
+					q = `UPDATE tickets SET parent=NULL WHERE ulid=$1`
+				}
+				_, err := tx.Exec(ctx, q, e.TicketULID)
 				return err
 			}
 			s, _ := v.(string)
-			_, err := tx.Exec(ctx, `UPDATE tickets SET pr=$1 WHERE ulid=$2`, s, e.TicketULID)
+			col := "pr"
+			if field == "parent" {
+				col = "parent"
+			}
+			_, err := tx.Exec(ctx, `UPDATE tickets SET `+col+`=$1 WHERE ulid=$2`, s, e.TicketULID)
 			return err
 		default:
 			if !hasV { // absent: remove key

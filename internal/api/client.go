@@ -83,6 +83,15 @@ func (c *HTTPClient) Board(ctx context.Context) ([]store.Card, error) {
 	return cards, nil
 }
 
+// Arcs lists arcs (tickets with members) with derived rollups.
+func (c *HTTPClient) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
+	var arcs []store.ArcSummary
+	if err := c.do(ctx, http.MethodGet, "/api/arcs", nil, &arcs); err != nil {
+		return nil, err
+	}
+	return arcs, nil
+}
+
 func (c *HTTPClient) History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error) {
 	var evs []store.LedgerEvent
 	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/ticket/%s/history?limit=%d", ref, limit), nil, &evs); err != nil {

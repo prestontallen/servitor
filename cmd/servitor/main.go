@@ -82,6 +82,14 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		return encode(stdout, cards)
 
+	case "arcs":
+		arcs, err := c.Arcs(ctx)
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		return encode(stdout, arcs)
+
 	case "new":
 		var slug, title string
 		rank := "0"
@@ -309,6 +317,7 @@ func usage(w io.Writer) {
 
   ctx [ref]        whole ticket aggregate. ALWAYS exits 0 (hook contract).
   board            queued/active/blocked cards
+  arcs             arcs (tickets with members) with derived rollups
   new --slug S [--title T] [--rank N]
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
   log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)

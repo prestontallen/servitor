@@ -33,12 +33,19 @@ files. Core verbs:
 ```
 servitor ctx [ref]        ticket aggregate; always exits 0 (hook contract)
 servitor board            queued/active/blocked, rank-ordered
+servitor arcs             arcs (tickets with members) with derived rollups
 servitor new --slug S     -> ticket ULID
 servitor set <ref> ...    status / PR / free field=value pairs
 servitor log <ref> note   append an event
 servitor gate <ref> <g>   pass a gate
 servitor history <ref>    full event timeline
 ```
+
+Arcs group tickets: an arc is any ticket another ticket points at via
+`servitor set <ref> parent=<arc-ulid>` (create the arc as a plain ticket
+first). Rollup status, member count and last activity are derived, never
+set by hand. `source`/`source_ref`/`depends`/`area` are free fields set
+the same way; history events carry a derived `class` (signal|transition).
 
 Intended workflow: orient on `board`, classify the work at intake, work
 tickets with notes as you go, pass gates at handoffs, and record blockers
