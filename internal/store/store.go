@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -70,23 +73,126 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{Pool: pool}, nil
 }
 
-// ApplySchema creates the full schema on a fresh database. If the schema is
-// already present (ledger table exists) it is a no-op — full migrations are
-// not implemented yet.
+// migration is one ordered schema change. Files are migrations/NNN_name.sql;
+// NNN is the version, applied strictly in order.
+type migration struct {
+	id   int
+	name string
+	sql  string
+}
+
+func loadMigrations() ([]migration, error) {
+	paths, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	if err != nil {
+		return nil, err
+	}
+	var ms []migration
+	for _, p := range paths {
+		base := strings.TrimPrefix(p, "migrations/")
+		var id int
+		var name string
+		if _, err := fmt.Sscanf(base, "%03d_%s", &id, &name); err != nil {
+			return nil, fmt.Errorf("bad migration filename %q (want NNN_name.sql): %v", base, err)
+		}
+		name = strings.TrimSuffix(name, ".sql")
+		b, err := migrationsFS.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		ms = append(ms, migration{id: id, name: name, sql: string(b)})
+	}
+	sort.Slice(ms, func(i, j int) bool { return ms[i].id < ms[j].id })
+	for i := 1; i < len(ms); i++ {
+		if ms[i].id == ms[i-1].id {
+			return nil, fmt.Errorf("duplicate migration version %03d", ms[i].id)
+		}
+	}
+	return ms, nil
+}
+
+// migrationsTableName tracks applied migrations. It lives in the store package's
+// own schema, deliberately outside the projection-only guard (it must be
+// writable by the migration runner without the servitor.write GUC).
+const migrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
+	id         int         PRIMARY KEY,
+	name       text        NOT NULL,
+	applied_at timestamptz NOT NULL DEFAULT now()
+)`
+
+// ApplySchema brings the database to the latest schema version. On a fresh
+// database it applies every migration in order. On a database that predates
+// migrations (ledger exists but nothing is recorded) it stamps the baseline
+// 001_init.sql as already applied, then applies anything newer. Safe to run
+// repeatedly; each migration runs exactly once, in its own transaction.
 func (s *Store) ApplySchema(ctx context.Context) error {
-	var exists bool
-	if err := s.Pool.QueryRow(ctx,
-		`SELECT to_regclass('public.ledger') IS NOT NULL`).Scan(&exists); err != nil {
-		return err
+	if _, err := s.Pool.Exec(ctx, migrationsTable); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
 	}
-	if exists {
-		return nil
-	}
-	b, err := migrationsFS.ReadFile("migrations/001_init.sql")
+	ms, err := loadMigrations()
 	if err != nil {
 		return err
 	}
-	_, err = s.Pool.Exec(ctx, string(b))
+	applied := map[int]bool{}
+	rows, err := s.Pool.Query(ctx, `SELECT id FROM schema_migrations`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+
+	// Baseline stamp: a pre-migration database already has the full original
+	// schema (001_init.sql). Record it instead of re-running it.
+	if len(applied) == 0 {
+		var ledgerExists bool
+		if err := s.Pool.QueryRow(ctx,
+			`SELECT to_regclass('public.ledger') IS NOT NULL`).Scan(&ledgerExists); err != nil {
+			return err
+		}
+		if ledgerExists {
+			for _, m := range ms {
+				if m.id == 1 {
+					if err := s.stampMigration(ctx, m); err != nil {
+						return err
+					}
+					applied[m.id] = true
+				}
+			}
+		}
+	}
+
+	for _, m := range ms {
+		if applied[m.id] {
+			continue
+		}
+		if err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, m.sql); err != nil {
+				return fmt.Errorf("migration %03d_%s failed: %w", m.id, m.name, err)
+			}
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO schema_migrations (id, name) VALUES ($1, $2)`, m.id, m.name); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) stampMigration(ctx context.Context, m migration) error {
+	_, err := s.Pool.Exec(ctx,
+		`INSERT INTO schema_migrations (id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`, m.id, m.name)
 	return err
 }
 

@@ -300,3 +300,84 @@ func TestFullHistoryIsQueryable(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr, "history ok")
 }
+
+func TestApplySchemaIdempotent(t *testing.T) {
+	ctx := context.Background()
+	s := testDB(t)
+	// testDB already applied once; re-apply must be a clean no-op.
+	if err := s.ApplySchema(ctx); err != nil {
+		t.Fatalf("re-apply: %v", err)
+	}
+	var n int
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 {
+		t.Fatalf("no migrations recorded")
+	}
+}
+
+func TestApplySchemaBaselineStamp(t *testing.T) {
+	ctx := context.Background()
+	admin, err := pgx.Connect(ctx, adminDSN)
+	if err != nil {
+		t.Skipf("postgres not reachable: %v", err)
+	}
+	defer admin.Close(ctx)
+	for _, q := range []string{
+		`DROP DATABASE IF EXISTS servitor_test_legacy WITH (FORCE)`,
+		`CREATE DATABASE servitor_test_legacy`,
+	} {
+		if _, err := admin.Exec(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	dsn := strings.Replace(adminDSN, "/postgres?", "/servitor_test_legacy?", 1)
+	s, err := Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Pool.Close()
+
+	// Simulate a pre-migration database: the full original schema (001) was
+	// applied by the old code, which recorded nothing.
+	ms, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.id == 1 {
+			if _, err := s.Pool.Exec(ctx, m.sql); err != nil {
+				t.Fatalf("build legacy schema: %v", err)
+			}
+		}
+	}
+	if err := s.ApplySchema(ctx); err != nil {
+		t.Fatalf("baseline apply: %v", err)
+	}
+	var got string
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT name FROM schema_migrations WHERE id = 1`).Scan(&got); err != nil {
+		t.Fatalf("migration 001 not stamped: %v", err)
+	}
+	if got != "init" {
+		t.Fatalf("migration 001 name = %q, want init", got)
+	}
+	// And the full schema must now exist without 001 having re-run.
+	var exists bool
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT to_regclass('public.tickets') IS NOT NULL`).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("tickets table missing after baseline apply")
+	}
+	// Re-run for stability.
+	if err := s.ApplySchema(ctx); err != nil {
+		t.Fatalf("re-apply: %v", err)
+	}
+	// ledger was pre-existing garbage (no hypertable/trigger); drop the db.
+	if _, err := admin.Exec(ctx, `DROP DATABASE servitor_test_legacy WITH (FORCE)`); err != nil {
+		t.Fatal(err)
+	}
+}
