@@ -14,8 +14,8 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-//go:embed schema.sql
-var schemaFS embed.FS
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 // Event is one ledger append. Payload is the full command intent.
 type Event struct {
