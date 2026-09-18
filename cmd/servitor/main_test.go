@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/prestontallen/servitor/internal/api"
@@ -75,7 +77,9 @@ func TestHookAlwaysExitsZero(t *testing.T) {
 	if code != 0 {
 		t.Errorf("hook exited %d on unreachable API", code)
 	}
-	if !strings.Contains(out, "servitor: unavailable") || strings.Count(out, "\n") > 1 {
+	// preflight header lines first, then exactly one degraded line last
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.HasPrefix(lines[len(lines)-1], "servitor: unavailable") || strings.Count(out, "unavailable") != 1 {
 		t.Errorf("hook degrade output wrong: %q", out)
 	}
 
@@ -174,3 +178,29 @@ var (
 	_ = os.Getenv
 	_ = pgx.ErrNoRows
 )
+
+// TestPreflight needs no database: a non-git dir degrades to one line, and a
+// fresh repo with no origin reports canonical + unreachable within budget.
+func TestPreflight(t *testing.T) {
+	var b bytes.Buffer
+	dir := t.TempDir()
+	preflight(&b, dir, "agent:test", nil)
+	if !strings.Contains(b.String(), "not a git checkout") {
+		t.Errorf("non-git dir: %q", b.String())
+	}
+	if err := exec.Command("git", "-C", dir, "init", "-q", "-b", "main").Run(); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	b.Reset()
+	start := time.Now()
+	preflight(&b, dir, "agent:test", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z"}`))
+	out := b.String()
+	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("preflight took %v, budget is 4s", d)
+	}
+}

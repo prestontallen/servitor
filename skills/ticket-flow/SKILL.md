@@ -15,6 +15,19 @@ of work travels the same path:
 ticket → worktree+branch → commits → push branch → PR → human merges
 ```
 
+## 0. First five minutes
+
+Every session starts with `servitor hook` output (Claude: the SessionStart
+hook install.sh registers; Hermes: run it yourself). Read it, then check:
+
+1. `SERVITOR_ACTOR` is `agent:<you>`, not the default `agent:cli`.
+2. Where you are. `canonical checkout` means create a worktree before
+   editing; the commands are in the output. In a worktree, the branch
+   must be your ticket's.
+3. Behind origin/main? Fetch and rebase before you push, not mid-thought.
+4. The focused card `active by` someone else? Do not start it.
+   Coordinate or pick another card.
+
 ## 1. Start a ticket
 
 Look at `servitor board` first. A card that is already `active` shows
@@ -23,6 +36,7 @@ actor — coordinate or pick another card. That is the only mutex agents
 on different machines can see.
 
 ```bash
+export SERVITOR_ACTOR=agent:<agentname>
 servitor set <ref> --status active
 git fetch origin
 git worktree add -b agent/<agentname>/<ticket-slug> ../servitor-worktrees/<ticket-slug> origin/main
@@ -65,9 +79,11 @@ moved? Rebase your branch and push again; never force-push.
 After the human merges:
 
 ```bash
+servitor gate <ref> shipped                   # merged on origin/main IS shipped
 git -C <canonical> fetch origin
 git -C <canonical> worktree remove --force ../servitor-worktrees/<ticket-slug>
 git -C <canonical> branch -D agent/<agentname>/<ticket-slug>
+git push origin --delete agent/<agentname>/<ticket-slug>
 servitor log <ref> note "PR #N merged; branch + worktree released."
 ```
 

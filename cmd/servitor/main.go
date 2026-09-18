@@ -1,9 +1,9 @@
 // servitor CLI: a thin client over the API. It holds no state and applies
 // no rules — every fact comes from the Service, every write is an event.
 //
-// The SessionStart hook contract: `servitor ctx` ALWAYS exits 0, degrading
-// to one line when the API is unreachable. Everything else exits non-zero
-// on failure.
+// The SessionStart hook contract: `servitor hook` (preflight header + ctx)
+// and `servitor ctx` ALWAYS exit 0, degrading to one line when the API is
+// unreachable. Everything else exits non-zero on failure.
 package main
 
 import (
@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -56,28 +57,39 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 
 	switch cmd {
 	case "hook", "ctx":
-		// SessionStart hook: never block a session.
+		// SessionStart hook: never block a session. A short HTTP timeout so a
+		// hanging API cannot eat the hook's budget; `hook` adds the preflight
+		// header, `ctx` stays pure JSON for scripts.
+		if c.HTTP == nil {
+			c.HTTP = &http.Client{Timeout: 3 * time.Second}
+		}
 		ref := ""
 		if len(args) > 0 {
 			ref = args[0]
 		} else if v := env("SERVITOR_TICKET"); v != "" {
 			ref = v
 		}
+		var doc []byte
+		var board []store.Card
+		var err error
+		if ref != "" {
+			doc, err = c.Ctx(ctx, ref)
+		} else {
+			board, err = c.Board(ctx)
+		}
+		if cmd == "hook" {
+			dir, _ := os.Getwd()
+			preflight(stdout, dir, c.Actor, doc)
+		}
+		if err != nil {
+			fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
+			return 0
+		}
 		if ref == "" {
-			board, err := c.Board(ctx)
-			if err != nil {
-				fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
-				return 0
-			}
 			fmt.Fprintf(stdout, "servitor: no focused ticket (set SERVITOR_TICKET). %d open card(s):\n", len(board))
 			for _, c := range board {
 				fmt.Fprintf(stdout, "  [%s] %s (%s)\n", c.Status, c.Slug, c.ULID[:8])
 			}
-			return 0
-		}
-		doc, err := c.Ctx(ctx, ref)
-		if err != nil {
-			fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
 			return 0
 		}
 		stdout.Write(doc)
@@ -510,7 +522,9 @@ func jsonValue(s string) any {
 func usage(w io.Writer) {
 	fmt.Fprint(w, `servitor — thin client over the servitor API
 
-  ctx [ref]        whole ticket aggregate. ALWAYS exits 0 (hook contract).
+  hook [ref]       SessionStart hook: preflight header (where am I, who holds
+                                   the card) + ctx. ALWAYS exits 0.
+  ctx [ref]        whole ticket aggregate, JSON only. ALWAYS exits 0.
   board            queued/active/blocked cards
   list [--status S]... [--query Q] [--limit N]
                                    all tickets incl. done/dropped (arcs too)

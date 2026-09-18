@@ -6,7 +6,8 @@
 # links the servitor, servitor-dev and ticket-flow skills into every
 # detected agent skill directory (Hermes: ~/.hermes/skills, Claude:
 # ~/.claude/skills), so skill edits are live immediately and binary edits
-# take effect after restart.
+# take effect after restart. On hosts with Claude Code it also registers
+# the SessionStart hook (`servitor hook`) in ~/.claude/settings.json.
 #
 # Usage: ./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 #   --check    report drift and exit 1 if the deployed state differs
@@ -24,6 +25,8 @@ BIN_DIR="${HOME}/.local/bin"
 UNIT="servitord.service"
 ENV_FILE="${HOME}/.config/servitor/servitord.env"
 ENV_DIR="${HOME}/.config/servitor"
+CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
+HOOK_CMD="servitor hook"
 
 BINARIES=(servitor servitord servitor-mcp)
 
@@ -94,6 +97,32 @@ link_skill() {
     found=1
   done
   [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
+}
+
+hook_json() {
+  # hook_json check|install: is `servitor hook` a SessionStart hook in
+  # settings.json (exit 0/1); install adds it, keeping other keys and hooks,
+  # and leaves the file untouched when it is already there.
+  python3 - "$1" "${CLAUDE_SETTINGS}" "${HOOK_CMD}" <<'PY'
+import json, os, sys
+mode, path, cmd = sys.argv[1:4]
+s = json.load(open(path)) if os.path.exists(path) else {}
+entries = s.setdefault("hooks", {}).setdefault("SessionStart", [])
+have = any(h.get("command") == cmd for e in entries for h in e.get("hooks", []))
+if mode == "check" or have:
+    sys.exit(0 if have else 1)
+entries.append({"matcher": "startup|resume|clear|compact",
+                "hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
+with open(path, "w") as f:
+    json.dump(s, f, indent=2)
+    f.write("\n")
+PY
+}
+
+install_hook() {
+  # Claude Code hosts only: every new session starts with `servitor hook`
+  [ -d "${HOME}/.claude" ] || return 0
+  hook_json install && echo "==> SessionStart hook registered in ${CLAUDE_SETTINGS}"
 }
 
 build() {
@@ -191,6 +220,10 @@ check() {
     done
   done
   unit_installed || { echo "drift: ${HOME}/.config/systemd/user/${UNIT} differs from deploy/${UNIT}"; drift=1; }
+  if [ -d "${HOME}/.claude" ] && ! hook_json check; then
+    echo "drift: no SessionStart hook running '${HOOK_CMD}' in ${CLAUDE_SETTINGS} (run install.sh)"
+    drift=1
+  fi
   if [ -f "${ENV_FILE}" ]; then
     local mode
     mode="$(stat -c '%a' "${ENV_FILE}")"
@@ -224,6 +257,7 @@ build
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
 for s in servitor servitor-dev ticket-flow; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
+install_hook
 restart
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
