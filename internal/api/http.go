@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prestontallen/servitor/internal/store"
 )
 
 //go:embed static
@@ -75,6 +77,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", h.healthz)
 	mux.HandleFunc("GET /api/board", h.board)
+	mux.HandleFunc("GET /api/tickets", h.list)
 	mux.HandleFunc("GET /api/arcs", h.arcs)
 	mux.HandleFunc("GET /api/ticket/{ref}", h.ctx)
 	mux.HandleFunc("GET /api/ticket/{ref}/history", h.history)
@@ -196,6 +199,34 @@ func (h *HTTP) arcs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(arcs)
+}
+
+// list handles GET /api/tickets — the archive-reaching read. status is
+// repeatable and/or comma-separated; q is the slug/title substring;
+// limit caps the result.
+func (h *HTTP) list(w http.ResponseWriter, r *http.Request) {
+	f := store.ListFilter{}
+	q := r.URL.Query()
+	for _, raw := range q["status"] {
+		for _, st := range strings.Split(raw, ",") {
+			if st = strings.TrimSpace(strings.ToLower(st)); st != "" {
+				f.Statuses = append(f.Statuses, st)
+			}
+		}
+	}
+	f.Query = q.Get("q")
+	if l := q.Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			f.Limit = n
+		}
+	}
+	cards, err := h.Service.List(r.Context(), f)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cards)
 }
 
 func (h *HTTP) history(w http.ResponseWriter, r *http.Request) {

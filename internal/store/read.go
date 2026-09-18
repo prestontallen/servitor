@@ -62,7 +62,8 @@ func (s *Store) TicketBySlug(ctx context.Context, slug string) (string, error) {
 }
 
 // Card is one board row (W2). Parent is set when the card belongs to an
-// arc (additive key). Arcs themselves are excluded — see Arcs.
+// arc (additive key). UpdatedAt powers aging display. Arcs themselves are
+// excluded — see Arcs.
 type Card struct {
 	ULID      string     `json:"ulid"`
 	Slug      string     `json:"slug"`
@@ -72,6 +73,7 @@ type Card struct {
 	CardWord  *string    `json:"card_word"`
 	BlockedOn *string    `json:"blocked_on"`
 	BlockedAt *time.Time `json:"blocked_since"`
+	UpdatedAt *time.Time `json:"updated_at"`
 	Parent    *string    `json:"parent"`
 }
 
@@ -80,7 +82,7 @@ type Card struct {
 // they are read through Arcs so the board stays a list of workable cards.
 func (s *Store) Board(ctx context.Context) ([]Card, error) {
 	rows, err := s.Pool.Query(ctx, `
-SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since, parent
+SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since, updated_at, parent
 FROM tickets
 WHERE status IN ('queued','active','blocked')
   AND ulid NOT IN (SELECT parent FROM tickets WHERE parent IS NOT NULL)
@@ -92,7 +94,66 @@ ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, rank
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.Parent); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent); err != nil {
+			return nil, err
+		}
+		cards = append(cards, c)
+	}
+	return cards, rows.Err()
+}
+
+// ListFilter selects tickets for List. Statuses empty means no status
+// filter (all five); Query matches case-insensitively against slug and
+// title; Limit <= 0 means unlimited.
+type ListFilter struct {
+	Statuses []string
+	Query    string
+	Limit    int
+}
+
+// validStatuses is the exact set accepted by status.set and List.
+var validStatuses = map[string]bool{
+	"queued": true, "active": true, "blocked": true, "done": true, "dropped": true,
+}
+
+// List returns tickets matching the filter, rank-ordered. Unlike Board it
+// reaches done and dropped tickets — including dropped arc members — and
+// includes arcs themselves. Validation is strict: an unknown status is an
+// error, never a silent empty result.
+func (s *Store) List(ctx context.Context, f ListFilter) ([]Card, error) {
+	for _, st := range f.Statuses {
+		if !validStatuses[st] {
+			return nil, fmt.Errorf("invalid status %q", st)
+		}
+	}
+	q := `SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since, updated_at, parent FROM tickets`
+	var conds []string
+	var args []any
+	if len(f.Statuses) > 0 {
+		args = append(args, f.Statuses)
+		conds = append(conds, fmt.Sprintf("status::text = ANY($%d)", len(args)))
+	}
+	if f.Query != "" {
+		args = append(args, "%"+f.Query+"%")
+		conds = append(conds, fmt.Sprintf("(slug ILIKE $%d OR title ILIKE $%d)", len(args), len(args)))
+	}
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += " ORDER BY rank"
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		q += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cards []Card
+	for rows.Next() {
+		var c Card
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)

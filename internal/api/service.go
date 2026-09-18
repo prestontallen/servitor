@@ -99,6 +99,10 @@ type Service interface {
 	Ctx(ctx context.Context, ref string) (json.RawMessage, error)
 	// Board returns queued/active/blocked cards in rank order (W2).
 	Board(ctx context.Context) ([]store.Card, error)
+	// List reaches every status, including done and dropped, with an
+	// optional case-insensitive slug/title query. Invalid status is a
+	// 422, never a silent empty result.
+	List(ctx context.Context, f store.ListFilter) ([]store.Card, error)
 	// Arcs lists arcs (tickets with members) with derived rollups.
 	Arcs(ctx context.Context) ([]store.ArcSummary, error)
 	// History returns one ticket's event timeline (W3).

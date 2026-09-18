@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/prestontallen/servitor/internal/api"
+	"github.com/prestontallen/servitor/internal/store"
 )
 
 func main() {
@@ -76,6 +78,39 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 
 	case "board":
 		cards, err := c.Board(ctx)
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		return encode(stdout, cards)
+
+	case "list":
+		// servitor list [--status S]... [--query Q] [--limit N]
+		// Reaches done and dropped; no flags = every ticket, arcs included.
+		f := store.ListFilter{}
+		for i := 0; i < len(args); i += 2 {
+			if i+1 >= len(args) {
+				say("list: flag %s needs a value", args[i])
+				return 2
+			}
+			switch args[i] {
+			case "--status":
+				f.Statuses = append(f.Statuses, strings.ToLower(args[i+1]))
+			case "--query":
+				f.Query = args[i+1]
+			case "--limit":
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil || n <= 0 {
+					say("list: --limit must be a positive integer")
+					return 2
+				}
+				f.Limit = n
+			default:
+				say("list: unknown flag %s", args[i])
+				return 2
+			}
+		}
+		cards, err := c.List(ctx, f)
 		if err != nil {
 			say("%v", err)
 			return 1
@@ -317,6 +352,8 @@ func usage(w io.Writer) {
 
   ctx [ref]        whole ticket aggregate. ALWAYS exits 0 (hook contract).
   board            queued/active/blocked cards
+  list [--status S]... [--query Q] [--limit N]
+                                   all tickets incl. done/dropped (arcs too)
   arcs             arcs (tickets with members) with derived rollups
   new --slug S [--title T] [--rank N]
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]

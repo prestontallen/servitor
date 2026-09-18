@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +92,30 @@ func (c *HTTPClient) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
 		return nil, err
 	}
 	return arcs, nil
+}
+
+// List reaches every ticket status, including done and dropped. The
+// returned cards use the same additive-keys shape as Board.
+func (c *HTTPClient) List(ctx context.Context, f store.ListFilter) ([]store.Card, error) {
+	q := url.Values{}
+	for _, st := range f.Statuses {
+		q.Add("status", st)
+	}
+	if f.Query != "" {
+		q.Set("q", f.Query)
+	}
+	if f.Limit > 0 {
+		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	var cards []store.Card
+	path := "/api/tickets"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, &cards); err != nil {
+		return nil, err
+	}
+	return cards, nil
 }
 
 func (c *HTTPClient) History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error) {

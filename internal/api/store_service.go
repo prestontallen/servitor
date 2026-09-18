@@ -42,6 +42,22 @@ func (ss *StoreService) Board(ctx context.Context) ([]store.Card, error) {
 	return cards, nil
 }
 
+// List passes through to the store. The store validates statuses strictly;
+// map that to the stable invalid_status code (422) here.
+func (ss *StoreService) List(ctx context.Context, f store.ListFilter) ([]store.Card, error) {
+	cards, err := ss.Store.List(ctx, f)
+	if err != nil {
+		if strings.HasPrefix(err.Error(), "invalid status") {
+			return nil, apiErr("invalid_status", err)
+		}
+		return nil, wrapUnreachable(err)
+	}
+	if cards == nil {
+		cards = []store.Card{}
+	}
+	return cards, nil
+}
+
 // Arcs lists arcs (tickets with members) with their derived rollups.
 func (ss *StoreService) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
 	arcs, err := ss.Store.Arcs(ctx)
