@@ -75,18 +75,33 @@ type Card struct {
 	BlockedAt *time.Time `json:"blocked_since"`
 	UpdatedAt *time.Time `json:"updated_at"`
 	Parent    *string    `json:"parent"`
+	// ActiveBy/ActiveSince: actor and time of the latest status.set active
+	// event. This is the cross-machine "who holds the card" signal — an
+	// agent does not start a card active under another actor.
+	ActiveBy    *string    `json:"active_by"`
+	ActiveSince *time.Time `json:"active_since"`
 }
+
+// activeSetWhere matches ledger rows (alias l) that set ticket t active.
+// The latest one is "who holds the card". Shared by Board and CtxRead.
+const activeSetWhere = `l.ticket_ulid=t.ulid AND l.kind='status.set' AND l.payload->>'status'='active'`
+
+// cardSelectSQL is the column list every Card scan reads (Board, List),
+// with the who-holds-the-card join. Callers append WHERE / ORDER BY.
+const cardSelectSQL = `
+SELECT t.ulid, t.slug, t.title, t.status::text, t.rank, t.card_word::text, t.blocked_on, t.blocked_since, t.updated_at, t.parent,
+       a.actor, a.ts
+FROM tickets t LEFT JOIN LATERAL (SELECT l.actor, l.ts FROM ledger l WHERE ` + activeSetWhere + `
+                                  ORDER BY l.id DESC LIMIT 1) a ON t.status='active'`
 
 // Board returns queued/active/blocked cards in rank order. Arcs (tickets
 // that are the parent of at least one other ticket) are excluded here —
 // they are read through Arcs so the board stays a list of workable cards.
 func (s *Store) Board(ctx context.Context) ([]Card, error) {
-	rows, err := s.Pool.Query(ctx, `
-SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since, updated_at, parent
-FROM tickets
-WHERE status IN ('queued','active','blocked')
-  AND ulid NOT IN (SELECT parent FROM tickets WHERE parent IS NOT NULL)
-ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, rank`)
+	rows, err := s.Pool.Query(ctx, cardSelectSQL+`
+WHERE t.status IN ('queued','active','blocked')
+  AND t.ulid NOT IN (SELECT parent FROM tickets WHERE parent IS NOT NULL)
+ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, t.rank`)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +109,7 @@ ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, rank
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -126,7 +141,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]Card, error) {
 			return nil, fmt.Errorf("invalid status %q", st)
 		}
 	}
-	q := `SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since, updated_at, parent FROM tickets`
+	q := cardSelectSQL
 	var conds []string
 	var args []any
 	if len(f.Statuses) > 0 {
@@ -153,7 +168,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]Card, error) {
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -301,12 +316,8 @@ SELECT jsonb_build_object(
   'feedback', COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'finding',l.payload->>'finding',
                              'source',COALESCE(l.payload->>'source','self'),'actor',l.actor,'ts',l.ts) ORDER BY l.id DESC)
                         FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='feedback'), '[]'::jsonb),
-  'lease', (SELECT jsonb_build_object('holder',l.payload->>'holder','tree',l.payload->>'tree',
-                      'host',l.payload->>'host','pid',l.payload->>'pid','ts',l.ts)
-            FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='lease.take'
-            AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.ticket_ulid=t.ulid
-                            AND r.kind='lease.release' AND r.id>l.id)
-            ORDER BY l.id DESC LIMIT 1),
+  'active_by', (SELECT l.actor FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
+  'active_since', (SELECT l.ts FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
   'head', (SELECT max(id) FROM ledger WHERE ticket_ulid=t.ulid)
 ) FROM t`, ticket).Scan(&doc)
 	if errors.Is(err, pgx.ErrNoRows) {
