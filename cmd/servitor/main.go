@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/prestontallen/servitor/internal/api"
 )
@@ -187,9 +188,18 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		if len(args) > 2 {
 			text = strings.Join(args[2:], " ")
 		}
+		// a JSON object body is used verbatim as the payload (structured
+		// kinds like feedback); anything else is wrapped as {"v": text}
+		payload := map[string]any{"v": text}
+		if strings.HasPrefix(strings.TrimSpace(text), "{") {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(text), &obj); err == nil {
+				payload = obj
+			}
+		}
 		res, err := c.Append(ctx, api.WriteCmd{
 			Ticket: args[0], Kind: args[1], Actor: c.Actor,
-			Payload: map[string]any{"v": text},
+			Payload: payload,
 		})
 		if err != nil {
 			say("%v", err)
@@ -232,6 +242,39 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		return encode(stdout, evs)
 
+	case "feedback":
+		f := api.FeedbackFilter{}
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--since":
+				i++
+				if i < len(args) {
+					for _, layout := range []string{"2006-01-02", time.RFC3339} {
+						if t, err := time.Parse(layout, args[i]); err == nil {
+							f.Since = &t
+							break
+						}
+					}
+				}
+			case "--source":
+				i++
+				if i < len(args) {
+					f.Source = args[i]
+				}
+			case "--limit":
+				i++
+				if i < len(args) {
+					fmt.Sscanf(args[i], "%d", &f.Limit)
+				}
+			}
+		}
+		evs, err := c.Feedback(ctx, f)
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		return encode(stdout, evs)
+
 	default:
 		usage(stderr)
 		return 2
@@ -268,7 +311,9 @@ func usage(w io.Writer) {
   board            queued/active/blocked cards
   new --slug S [--title T] [--rank N]
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
-  log <ref> <kind> [text]          note, or any ledger kind
+  log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)
+  feedback [--since DATE] [--source human|self] [--limit N]
+                                   feedback events across all tickets
   gate <ref> <gate>                contract_approved requires SERVITOR_HUMAN
   history <ref>                    full event timeline
 

@@ -76,6 +76,13 @@ func (ss *StoreService) Append(ctx context.Context, cmd WriteCmd) (AppendResult,
 		}
 		cmd.Ticket = store.NewULID()
 	}
+	// feedback is a structured kind: it must carry a finding. Other
+	// unknown kinds remain ledger-only, verbatim (store invariant 4).
+	if cmd.Kind == "feedback" {
+		if err := validateFeedback(cmd.Payload); err != nil {
+			return AppendResult{}, err
+		}
+	}
 	ticket, err := ss.resolve(ctx, cmd.Ticket)
 	if err != nil {
 		return AppendResult{}, err
@@ -140,6 +147,32 @@ func (ss *StoreService) Subscribe(ctx context.Context) (Subscription, error) {
 		close(done)
 		conn.Release()
 	}}, nil
+}
+
+// Feedback lists feedback-kind ledger events across all tickets.
+func (ss *StoreService) Feedback(ctx context.Context, f FeedbackFilter) ([]store.LedgerEvent, error) {
+	evs, err := ss.Store.Feedback(ctx, store.FeedbackFilter(f))
+	if err != nil {
+		return nil, wrapUnreachable(err)
+	}
+	return evs, nil
+}
+
+// validateFeedback enforces the feedback payload shape: finding (required,
+// non-empty string), source (optional, human|self, default self).
+func validateFeedback(p map[string]any) error {
+	finding, _ := p["finding"].(string)
+	if finding == "" {
+		return &APIError{Code: "invalid_event",
+			Message: "feedback requires a non-empty \"finding\" string"}
+	}
+	switch s, _ := p["source"].(string); s {
+	case "", "human", "self":
+	default:
+		return &APIError{Code: "invalid_event",
+			Message: "feedback \"source\" must be human or self"}
+	}
+	return nil
 }
 
 func (ss *StoreService) Ping(ctx context.Context) error {

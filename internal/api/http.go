@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed static
@@ -78,6 +79,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/ticket/{ref}/history", h.history)
 	mux.HandleFunc("POST /api/events", h.append)
 	mux.HandleFunc("GET /api/events/stream", h.stream)
+	mux.HandleFunc("GET /api/feedback", h.feedback)
 	mux.HandleFunc("GET /api/analytics", h.analytics)
 	mux.Handle("/", h.static())
 	return h.authed(mux)
@@ -103,6 +105,31 @@ func cacheHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (h *HTTP) feedback(w http.ResponseWriter, r *http.Request) {
+	f := FeedbackFilter{}
+	if s := r.URL.Query().Get("since"); s != "" {
+		for _, layout := range []string{"2006-01-02", time.RFC3339} {
+			if t, err := time.Parse(layout, s); err == nil {
+				f.Since = &t
+				break
+			}
+		}
+	}
+	f.Source = r.URL.Query().Get("source")
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			f.Limit = n
+		}
+	}
+	evs, err := h.Service.Feedback(r.Context(), f)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(evs)
 }
 
 func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {

@@ -162,6 +162,9 @@ SELECT jsonb_build_object(
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='link'), '[]'::jsonb),
   'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body))
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='question'), '[]'::jsonb),
+  'feedback', COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'finding',l.payload->>'finding',
+                             'source',COALESCE(l.payload->>'source','self'),'actor',l.actor,'ts',l.ts) ORDER BY l.id DESC)
+                        FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='feedback'), '[]'::jsonb),
   'head', (SELECT max(id) FROM ledger WHERE ticket_ulid=t.ulid)
 ) FROM t`, ticket).Scan(&doc)
 	if errors.Is(err, pgx.ErrNoRows) {

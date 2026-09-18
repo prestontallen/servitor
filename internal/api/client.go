@@ -99,6 +99,23 @@ func (c *HTTPClient) Append(ctx context.Context, cmd WriteCmd) (AppendResult, er
 	return res, nil
 }
 
+// Feedback lists feedback-kind ledger events across all tickets.
+func (c *HTTPClient) Feedback(ctx context.Context, f FeedbackFilter) ([]store.LedgerEvent, error) {
+	q := "/api/feedback?"
+	if f.Since != nil {
+		q += "since=" + f.Since.Format(time.RFC3339) + "&"
+	}
+	if f.Source != "" {
+		q += "source=" + f.Source + "&"
+	}
+	q += fmt.Sprintf("limit=%d", f.Limit)
+	var evs []store.LedgerEvent
+	if err := c.do(ctx, http.MethodGet, q, nil, &evs); err != nil {
+		return nil, err
+	}
+	return evs, nil
+}
+
 // Subscribe consumes the SSE stream. On `event: resync` the channel closes;
 // callers replay past their watermark via History and re-subscribe.
 func (c *HTTPClient) Subscribe(ctx context.Context) (Subscription, error) {

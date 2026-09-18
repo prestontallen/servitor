@@ -85,6 +85,13 @@ type Subscription struct {
 	Cancel  func()
 }
 
+// FeedbackFilter selects feedback-kind ledger events across tickets.
+type FeedbackFilter struct {
+	Since  *time.Time
+	Source string
+	Limit  int
+}
+
 // Service is THE API surface. Transports depend on this interface only;
 // the store-backed implementation is swappable.
 type Service interface {
@@ -96,6 +103,9 @@ type Service interface {
 	History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error)
 	// Append applies one ledger event (the write path).
 	Append(ctx context.Context, cmd WriteCmd) (AppendResult, error)
+	// Feedback returns feedback-kind ledger events across all tickets,
+	// newest first. Filter is nil-safe: zero value = unbounded.
+	Feedback(ctx context.Context, f FeedbackFilter) ([]store.LedgerEvent, error)
 	// Subscribe streams change notifications (NOTIFY fast path).
 	Subscribe(ctx context.Context) (Subscription, error)
 	// Analytics returns per-day ledger activity (time-series read).

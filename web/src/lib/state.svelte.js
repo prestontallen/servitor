@@ -19,14 +19,21 @@ export function openTicket(ref) {
   view.ticketRef = ref;
 }
 
-export const theme = $state({
-  name: localStorage.getItem('servitor_theme') || 'forge'
+export const ui = $state({
+  mode: localStorage.getItem('servitor_mode') || 'dark', // light | dark
+  accent: localStorage.getItem('servitor_accent') || 'forge' // forge | auspex
 });
 
-export function setTheme(t) {
-  theme.name = t;
-  localStorage.setItem('servitor_theme', t);
-  document.documentElement.dataset.theme = t;
+export function setMode(m) {
+  ui.mode = m;
+  localStorage.setItem('servitor_mode', m);
+  document.documentElement.dataset.mode = m;
+}
+
+export function setAccent(a) {
+  ui.accent = a;
+  localStorage.setItem('servitor_accent', a);
+  document.documentElement.dataset.accent = a;
 }
 
 export const board = $state({ cards: [], error: null });
@@ -49,7 +56,7 @@ export function wordClass(w) {
 const KIND_GLYPH = {
   note: '✎', decision: '⚖', status_change: '⇄', field_diff: '≡',
   contract_approved: '⊗', presented: '◎', shipped: '▲',
-  ticket_create: '✚', gate: '⊗', hook: '⚡'
+  ticket_create: '✚', gate: '⊗', hook: '⚡', feedback: '✦'
 };
 export function kindGlyph(kind) {
   return KIND_GLYPH[kind] || '•';
