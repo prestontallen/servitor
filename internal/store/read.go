@@ -215,10 +215,12 @@ FROM ledger WHERE ticket_ulid=$1 ORDER BY id LIMIT $2`, ticketULID, limit)
 
 // ArcMember is one ticket under an arc (identity + enough state to render).
 type ArcMember struct {
-	ULID   string `json:"ulid"`
-	Slug   string `json:"slug"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	ULID         string     `json:"ulid"`
+	Slug         string     `json:"slug"`
+	Title        string     `json:"title"`
+	Status       string     `json:"status"`
+	UpdatedAt    *time.Time `json:"updated_at"`
+	BlockedSince *time.Time `json:"blocked_since"`
 }
 
 // ArcSummary is one arc (a ticket with member tickets) with its derived
@@ -255,7 +257,8 @@ LEFT JOIN LATERAL (
       ELSE 'done'
     END AS rollup,
     jsonb_agg(jsonb_build_object(
-      'ulid', m.ulid, 'slug', m.slug, 'title', m.title, 'status', m.status)) AS members
+      'ulid', m.ulid, 'slug', m.slug, 'title', m.title, 'status', m.status,
+      'updated_at', m.updated_at, 'blocked_since', m.blocked_since)) AS members
   FROM tickets m
   WHERE m.parent = t.ulid AND m.status <> 'dropped'
 ) r ON true
