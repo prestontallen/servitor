@@ -14,7 +14,7 @@
   });
 
   const statusText = $derived(
-    { connecting: 'connecting…', live: 'linked', resync: 'resyncing…', down: 'signal lost' }[live.status]
+    { connecting: 'connecting…', live: 'connected', down: 'signal lost' }[live.status]
   );
 </script>
 

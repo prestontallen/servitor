@@ -83,13 +83,26 @@ func (h *HTTP) Routes() http.Handler {
 	return h.authed(mux)
 }
 
-// static serves the embedded GUI (single-page, no build step).
+// static serves the embedded GUI (built by web/ via Vite). index.html is
+// served no-cache so deploys are picked up immediately; hashed assets
+// (/assets/...) are immutable and cached long.
 func (h *HTTP) static() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		panic(err)
 	}
-	return http.StripPrefix("/", http.FileServer(http.FS(sub)))
+	return cacheHeaders(http.StripPrefix("/", http.FileServer(http.FS(sub))))
+}
+
+func cacheHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			w.Header().Set("Cache-Control", "no-cache")
+		} else if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {

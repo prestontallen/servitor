@@ -6,10 +6,10 @@
 import { get, streamURL } from './api.svelte.js';
 
 export const live = $state({
-  status: 'connecting', // connecting | live | resync | down
+  status: 'connecting', // connecting | live | down
   head: 0, // watermark: max global ledger event id seen
-  events: [], // ledger events, newest first, deduped by event_id
-  flashes: {}, // event_id -> true while the live flash plays
+  events: [], // ledger events, newest first, deduped by id
+  flashes: {}, // event id -> true while the live flash plays
   changeCount: 0
 });
 
@@ -19,23 +19,23 @@ let backoff = 1000;
 export function connectStream() {
   if (es) es.close();
   es = new EventSource(streamURL());
-  es.addEventListener('change', (e) => {
+  // open fires when the HTTP stream is established, regardless of whether
+  // any change events flow — this, not the change handler, is the
+  // "connected" signal.
+  es.onopen = () => {
     live.status = 'live';
     backoff = 1000;
+  };
+  es.addEventListener('change', (e) => {
+    live.status = 'live';
     const c = JSON.parse(e.data);
     if ((c.event_id || 0) > live.head) live.head = c.event_id;
     ingest(c.ticket);
   });
-  es.addEventListener('resync', () => {
-    live.status = 'resync';
-    connectStream();
-  });
   es.onerror = () => {
+    // EventSource auto-reconnects; keep the stream object and show the
+    // degraded state until the next onopen proves the link is back.
     live.status = 'down';
-    es.close();
-    es = null;
-    setTimeout(connectStream, backoff);
-    backoff = Math.min(backoff * 2, 15000);
   };
 }
 
