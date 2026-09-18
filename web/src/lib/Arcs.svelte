@@ -1,5 +1,5 @@
 <script>
-  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOf, fmtTs } from './state.svelte.js';
+  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOf, ageOfState, fmtTs } from './state.svelte.js';
   import { live } from './live.svelte.js';
 
   let expanded = $state({});
@@ -11,12 +11,6 @@
   });
 
   const ROLLUP_LABEL = { queued: 'queued', active: 'in motion', blocked: 'blocked', done: 'done' };
-
-  // age display: blocked uses blocked_since, others last activity (same rule as Board)
-  function memberAge(m) {
-    const ts = m.status === 'blocked' && m.blocked_since ? m.blocked_since : m.updated_at;
-    return ts ? { ts, ...ageOf(ts) } : null;
-  }
 
   // attention: what needs the human — blocked-on-someone, presented
   // (checking word) waiting on acceptance, stale actives. Derived from
@@ -83,12 +77,12 @@
       {#if expanded[a.ulid]}
         <ul class="members">
           {#each a.members as m (m.ulid)}
+            {@const ma = ageOfState(m.status, m.blocked_since, m.updated_at)}
             <li onclick={() => openTicket(m.ulid)}>
               <span class="m-status s-{m.status}">{m.status}</span>
               <span class="m-title">{m.title || m.slug}</span>
               <span class="muted m-slug">{m.slug}</span>
-              {#if memberAge(m)}
-                {@const ma = memberAge(m)}
+              {#if ma}
                 <span class="age" class:stale={ma.stale}>
                   {m.status === 'blocked' ? '⏸' : '·'} {relTs(ma.ts)}
                 </span>

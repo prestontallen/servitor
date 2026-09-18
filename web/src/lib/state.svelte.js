@@ -149,6 +149,13 @@ export function ageOf(ts, staleDays = 3) {
   return { days: d, stale: d >= staleDays };
 }
 
+// Age source rule, shared by every view that shows age: blocked tickets
+// age from blocked_since, everything else from last activity.
+export function ageOfState(status, blockedSince, updatedAt) {
+  const ts = status === 'blocked' && blockedSince ? blockedSince : updatedAt;
+  return ts ? { ts, ...ageOf(ts) } : null;
+}
+
 export function fmtTs(ts) {
   return new Date(ts).toLocaleString();
 }
