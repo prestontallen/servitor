@@ -35,6 +35,14 @@ func envOr(k, def string) string {
 	return def
 }
 
+// ensure lazily initializes the subitem.set payload map.
+func ensure(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
+	}
+	return m
+}
+
 // run executes one command and returns the process exit code. All I/O goes
 // through the writers; all failure paths return codes instead of exiting.
 func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(string) string) int {
@@ -124,6 +132,157 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			return 1
 		}
 		return encode(stdout, arcs)
+
+	case "add":
+		// servitor add <ref> <criterion|plan|question> <text...>
+		if len(args) < 3 {
+			say("add: need <ref> <criterion|plan|question> <text>")
+			return 2
+		}
+		res, err := c.Append(ctx, api.WriteCmd{
+			Ticket:  args[0],
+			Kind:    "subitem.add",
+			Actor:   c.Actor,
+			Payload: map[string]any{"kind": args[1], "body": strings.Join(args[2:], " "), "rank": 0},
+		})
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, res.EventID)
+		return 0
+
+	case "decide":
+		// servitor decide <ref> <what> --why <why>
+		ref, what := args[0], ""
+		var why string
+		rest := args[1:]
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == "--why" {
+				if i+1 >= len(rest) {
+					say("decide: --why needs a value")
+					return 2
+				}
+				why = rest[i+1]
+				rest = append(rest[:i:i], rest[i+1:]...)
+				break
+			}
+		}
+		what = strings.Join(rest, " ")
+		if what == "" || why == "" {
+			say("decide: need <ref> <what> --why <why>")
+			return 2
+		}
+		res, err := c.Append(ctx, api.WriteCmd{
+			Ticket:  ref,
+			Kind:    "decision",
+			Actor:   c.Actor,
+			Payload: map[string]any{"what": what, "why": why},
+		})
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, res.EventID)
+		return 0
+
+	case "subitem":
+		// servitor subitem <ref> <prefix> [--body B] [--state S] [--rank N]
+		if len(args) < 2 {
+			say("subitem: need <ref> <prefix> and at least one of --body/--state/--rank")
+			return 2
+		}
+		ref, prefix := args[0], args[1]
+		var setP map[string]any
+		var last int64
+		for i := 2; i < len(args); i += 2 {
+			if i+1 >= len(args) {
+				say("subitem: flag %s needs a value", args[i])
+				return 2
+			}
+			switch args[i] {
+			case "--body":
+				setP = ensure(setP)
+				setP["body"] = args[i+1]
+			case "--state":
+				setP = ensure(setP)
+				setP["state"] = args[i+1]
+			case "--rank":
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil {
+					say("subitem: --rank must be an integer")
+					return 2
+				}
+				res, err := c.Append(ctx, api.WriteCmd{Ticket: ref, Kind: "subitem.rank",
+					Actor: c.Actor, Payload: map[string]any{"ulid": prefix, "rank": n}})
+				if err != nil {
+					say("%v", err)
+					return 1
+				}
+				last = res.EventID
+			default:
+				say("subitem: unknown flag %s", args[i])
+				return 2
+			}
+		}
+		if setP != nil {
+			setP["ulid"] = prefix
+			res, err := c.Append(ctx, api.WriteCmd{Ticket: ref, Kind: "subitem.set", Actor: c.Actor, Payload: setP})
+			if err != nil {
+				say("%v", err)
+				return 1
+			}
+			last = res.EventID
+		}
+		fmt.Fprintln(stdout, last)
+		return 0
+
+	case "events":
+		f := store.LedgerFilter{}
+		for i := 0; i < len(args); i += 2 {
+			if i+1 >= len(args) {
+				say("events: flag %s needs a value", args[i])
+				return 2
+			}
+			switch args[i] {
+			case "--ticket":
+				f.Ticket = args[i+1]
+			case "--kind":
+				f.Kind = args[i+1]
+			case "--actor-type":
+				f.ActorType = args[i+1]
+			case "--since-id":
+				n, err := strconv.ParseInt(args[i+1], 10, 64)
+				if err != nil {
+					say("events: --since-id must be an integer")
+					return 2
+				}
+				f.SinceID = n
+			case "--before-id":
+				n, err := strconv.ParseInt(args[i+1], 10, 64)
+				if err != nil {
+					say("events: --before-id must be an integer")
+					return 2
+				}
+				f.BeforeID = n
+			case "--limit":
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil {
+					say("events: --limit must be an integer")
+					return 2
+				}
+				f.Limit = n
+			default:
+				say("events: unknown flag %s", args[i])
+				return 2
+			}
+		}
+		evs, err := c.Events(ctx, f)
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		return encode(stdout, evs)
 
 	case "new":
 		var slug, title string
@@ -358,6 +517,11 @@ func usage(w io.Writer) {
   new --slug S [--title T] [--rank N]
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
   log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)
+  add <ref> <criterion|plan|question> <text>
+                                   append a subitem (subitem.add)
+  decide <ref> <what> --why <why>  record a decision subitem
+  subitem <ref> <prefix> [--body B] [--state S] [--rank N]
+                                   update/reorder a subitem by ULID prefix
   feedback [--since DATE] [--source human|self] [--limit N]
                                    feedback events across all tickets
   gate <ref> <gate>                contract_approved requires SERVITOR_HUMAN

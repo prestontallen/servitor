@@ -105,6 +105,8 @@ type Service interface {
 	List(ctx context.Context, f store.ListFilter) ([]store.Card, error)
 	// Arcs lists arcs (tickets with members) with derived rollups.
 	Arcs(ctx context.Context) ([]store.ArcSummary, error)
+	// Events reads the global ledger, newest first, filtered.
+	Events(ctx context.Context, f store.LedgerFilter) ([]store.LedgerEvent, error)
 	// History returns one ticket's event timeline (W3).
 	History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error)
 	// Append applies one ledger event (the write path).

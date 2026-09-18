@@ -70,6 +70,23 @@ func (ss *StoreService) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
 	return arcs, nil
 }
 
+// Events reads the global ledger, newest first, filtered. The ticket
+// filter accepts a slug or ULID and is resolved here.
+func (ss *StoreService) Events(ctx context.Context, f store.LedgerFilter) ([]store.LedgerEvent, error) {
+	if f.Ticket != "" {
+		id, err := ss.resolve(ctx, f.Ticket)
+		if err != nil {
+			return nil, err
+		}
+		f.Ticket = id
+	}
+	evs, err := ss.Store.Events(ctx, f)
+	if err != nil {
+		return nil, wrapUnreachable(err)
+	}
+	return evs, nil
+}
+
 func (ss *StoreService) History(ctx context.Context, ref string, limit int) ([]store.LedgerEvent, error) {
 	id, err := ss.resolve(ctx, ref)
 	if err != nil {

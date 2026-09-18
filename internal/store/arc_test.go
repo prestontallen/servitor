@@ -172,3 +172,81 @@ func TestHistoryCarriesClass(t *testing.T) {
 		t.Errorf("status.set: want transition, got %q", byKind["status.set"])
 	}
 }
+
+func TestGlobalEventsFiltered(t *testing.T) {
+	s := testDB(t)
+	ctx := context.Background()
+
+	a := newTicket(t, s, "evt-a")
+	b := newTicket(t, s, "evt-b")
+	mustAppend(t, s, evt(a, "note", map[string]any{"v": "note on a"}))
+	mustAppend(t, s, evt(b, "status.set", map[string]any{"status": "active"}))
+	mustAppend(t, s, evt(a, "note", map[string]any{"v": "second note on a"}))
+
+	// unfiltered: newest first, class set
+	all, err := s.Events(ctx, LedgerFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) < 5 {
+		t.Fatalf("want >= 5 events, got %d", len(all))
+	}
+	if all[0].ID < all[len(all)-1].ID {
+		t.Errorf("want newest-first ordering")
+	}
+	for _, e := range all {
+		if e.Class != "signal" && e.Class != "transition" {
+			t.Errorf("event %d: bad class %q", e.ID, e.Class)
+		}
+	}
+
+	// kind filter
+	notes, err := s.Events(ctx, LedgerFilter{Kind: "note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range notes {
+		if e.Kind != "note" {
+			t.Errorf("kind filter leaked %s", e.Kind)
+		}
+		if e.Class != "signal" {
+			t.Errorf("note should be signal, got %s", e.Class)
+		}
+	}
+
+	// ticket filter (exact ULID)
+	onA, err := s.Events(ctx, LedgerFilter{Ticket: a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range onA {
+		if e.Ticket != a {
+			t.Errorf("ticket filter leaked %s", e.Ticket)
+		}
+	}
+
+	// actor_type filter
+	human, err := s.Events(ctx, LedgerFilter{ActorType: "human"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range human {
+		if e.ActorType != "human" {
+			t.Errorf("actor_type filter leaked %s", e.ActorType)
+		}
+	}
+
+	// keyset: since_id = max of first page skips it
+	if all[0].ID == all[len(all)-1].ID {
+		t.Skip("single-event page; keyset untestable")
+	}
+	page2, err := s.Events(ctx, LedgerFilter{SinceID: all[0].ID, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range page2 {
+		if e.ID >= all[0].ID {
+			t.Errorf("since_id filter leaked id %d", e.ID)
+		}
+	}
+}

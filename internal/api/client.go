@@ -94,6 +94,32 @@ func (c *HTTPClient) Arcs(ctx context.Context) ([]store.ArcSummary, error) {
 	return arcs, nil
 }
 
+// Events reads the global ledger, newest first, filtered.
+func (c *HTTPClient) Events(ctx context.Context, f store.LedgerFilter) ([]store.LedgerEvent, error) {
+	q := "/api/events?"
+	if f.Ticket != "" {
+		q += "ticket=" + f.Ticket + "&"
+	}
+	if f.Kind != "" {
+		q += "kind=" + f.Kind + "&"
+	}
+	if f.ActorType != "" {
+		q += "actor_type=" + f.ActorType + "&"
+	}
+	if f.SinceID > 0 {
+		q += fmt.Sprintf("since_id=%d&", f.SinceID)
+	}
+	if f.BeforeID > 0 {
+		q += fmt.Sprintf("before_id=%d&", f.BeforeID)
+	}
+	q += fmt.Sprintf("limit=%d", f.Limit)
+	var evs []store.LedgerEvent
+	if err := c.do(ctx, http.MethodGet, q, nil, &evs); err != nil {
+		return nil, err
+	}
+	return evs, nil
+}
+
 // List reaches every ticket status, including done and dropped. The
 // returned cards use the same additive-keys shape as Board.
 func (c *HTTPClient) List(ctx context.Context, f store.ListFilter) ([]store.Card, error) {

@@ -467,7 +467,13 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 		if sub == "" {
 			return errors.New("subitem.set requires ulid")
 		}
-		_, err := tx.Exec(ctx,
+		// prefix resolution, same as subitem.rank: address by identity,
+		// never position. A full ULID resolves to itself.
+		sub, err := resolveSubitem(ctx, tx, e.TicketULID, sub)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx,
 			`UPDATE subitems SET
 			   body = CASE WHEN $3::jsonb ? 'body'  THEN $4 ELSE body END,
 			   state = CASE WHEN $3::jsonb ? 'state' THEN $5 ELSE state END,

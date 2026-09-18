@@ -79,6 +79,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/board", h.board)
 	mux.HandleFunc("GET /api/tickets", h.list)
 	mux.HandleFunc("GET /api/arcs", h.arcs)
+	mux.HandleFunc("GET /api/events", h.events)
 	mux.HandleFunc("GET /api/ticket/{ref}", h.ctx)
 	mux.HandleFunc("GET /api/ticket/{ref}/history", h.history)
 	mux.HandleFunc("POST /api/events", h.append)
@@ -199,6 +200,48 @@ func (h *HTTP) arcs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(arcs)
+}
+
+// events serves the global ledger query: ticket (slug or ULID), kind,
+// actor_type, since_id (keyset), limit. Newest first.
+func (h *HTTP) events(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := store.LedgerFilter{
+		Ticket:    q.Get("ticket"),
+		Kind:      q.Get("kind"),
+		ActorType: q.Get("actor_type"),
+	}
+	if s := q.Get("since_id"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			f.SinceID = n
+		} else {
+			writeErr(w, &APIError{Code: "invalid_event", Message: "since_id must be an integer"})
+			return
+		}
+	}
+	if s := q.Get("before_id"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			f.BeforeID = n
+		} else {
+			writeErr(w, &APIError{Code: "invalid_event", Message: "before_id must be an integer"})
+			return
+		}
+	}
+	if l := q.Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			f.Limit = n
+		} else {
+			writeErr(w, &APIError{Code: "invalid_event", Message: "limit must be an integer"})
+			return
+		}
+	}
+	evs, err := h.Service.Events(r.Context(), f)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(evs)
 }
 
 // list handles GET /api/tickets — the archive-reaching read. status is

@@ -18,7 +18,7 @@ function parseHash() {
   const [name, ref] = h.split('/');
   if (name === 'ticket' && ref) return { name: 'ticket', ticketRef: decodeURIComponent(ref), arcRef: null };
   if (name === 'timeline' && ref) return { name: 'timeline', ticketRef: null, arcRef: decodeURIComponent(ref) };
-  if (['arcs', 'board', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
+  if (['arcs', 'board', 'journal', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
   return null;
 }
 
