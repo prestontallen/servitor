@@ -11,6 +11,28 @@ testing, and demos run against per-worktree staging databases. Use
 together with the `worktrees` skill — this skill assumes you have claimed
 a worktree named `<slug>` with a deterministic port offset.
 
+## Multi-host isolation (multiple agents, this machine and others)
+
+Multiple agents work this repo, some from this machine and some from
+other machines. Rules that make that safe:
+
+1. **The canonical checkout never takes commits.** A pre-commit guard
+   (scripts/hooks/pre-commit, wired via core.hooksPath by install.sh)
+   refuses commits outside a claimed worktree. If the guard fires, claim
+   a worktree (see the worktrees skill) — do not bypass it except with a
+   human-directed SERVITOR_ALLOW_CANONICAL=1.
+2. **Claim the card in servitor before starting** (`servitor set <ref>
+   --status active`). If a card is already active under another agent,
+   do not start parallel work on it — coordinate or pick another card.
+   Card claiming is the only mutex an agent on ANOTHER machine can see.
+3. **Push rejection is normal.** Another clone may have fast-forwarded
+   origin/main while you worked: fetch, rebase YOUR branch onto
+   origin/main in YOUR clone, push again. Never force-push, never rebase
+   over or drop a commit you didn't author.
+4. **Push small and often.** Long-lived local divergence from
+   origin/main turns a routine fast-forward push into a surprise for
+   every other clone.
+
 ## One-time setup (done once per host, by the human or install.sh)
 
 - Postgres role `servitor_staging` with login + password, granted rights
