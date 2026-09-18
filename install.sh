@@ -62,6 +62,8 @@ link_tone() {
 
 build() {
   echo "==> building from ${REPO}"
+  echo "==> building GUI (web/ -> internal/api/static)"
+  (cd "${REPO}/web" && npm run build)
   (cd "${REPO}" && go build -o "${BIN_DIR}" ./cmd/servitor ./cmd/servitord ./cmd/servitor-mcp)
 }
 

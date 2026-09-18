@@ -1,2 +1,12 @@
 servitor_test/
 *.test
+
+# servitor GUI build artifacts (built by `cd web && npm run build` into
+# internal/api/static — do not commit; the embed needs them at build time
+# only, and the release pipeline will build them)
+web/node_modules/
+web/dist/
+
+# built GUI (vite output of web/)
+internal/api/static/index.html
+internal/api/static/assets/
