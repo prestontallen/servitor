@@ -16,9 +16,13 @@ a worktree named `<slug>` with a deterministic port offset.
 - Postgres role `servitor_staging` with login + password, granted rights
   only on `servitor_staging_*` databases. Never the prod `servitor` DB.
 - Credentials in `~/.config/servitor/staging.env` (outside the repo,
-  never committed): `SERVITOR_DSN`, `SERVITOR_STAGING_ROLE`.
+  never committed): `SERVITOR_STAGING_PASSWORD`.
 
 ## Staging database lifecycle (per worktree)
+
+```bash
+source ~/.config/servitor/staging.env   # SERVITOR_STAGING_PASSWORD
+```
 
 On this host Postgres runs in the `timescaledb` container; `psql`/`pg_dump`
 run inside it (host has no postgres client). Generic form:
