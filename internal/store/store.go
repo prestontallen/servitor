@@ -82,7 +82,7 @@ func (s *Store) ApplySchema(ctx context.Context) error {
 	if exists {
 		return nil
 	}
-	b, err := schemaFS.ReadFile("schema.sql")
+	b, err := migrationsFS.ReadFile("migrations/001_init.sql")
 	if err != nil {
 		return err
 	}
