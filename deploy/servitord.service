@@ -6,7 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/servitord
-Environment=SERVITOR_DSN=postgres://postgres:psql@localhost:5432/servitor?sslmode=disable
+# Secrets (SERVITOR_DSN, SERVITOR_TOKEN) live in the env file, not here.
+# The leading '-' keeps the unit startable when the file doesn't exist yet
+# (servitord then falls back to its built-in localhost DSN).
+EnvironmentFile=-%h/.config/servitor/servitord.env
 Environment=SERVITOR_ADDR=0.0.0.0:8181
 Restart=on-failure
 RestartSec=3

@@ -54,13 +54,22 @@ as `blocked --on <party>` — never fake done.
 ## Install
 
 ```
-./install.sh [--check] [--tone]
+./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 ```
 
 Builds the binaries, installs them to `~/.local/bin`, restarts the
 `servitord` systemd unit, and links the skill into detected agent skill
 directories. `--check` reports drift. `--tone` additionally links the
 optional reporting-register skill.
+
+The daemon reads its secrets from `~/.config/servitor/servitord.env`
+(mode 0600), which install.sh creates on first run — from `--dsn` when
+given, otherwise by migrating the DSN out of an older unit. Reruns
+without `--dsn` keep the existing file. `servitord apply-schema` runs
+against that DSN before the restart, so a pending migration never
+leaves the daemon 500ing on new columns; if apply-schema fails, install
+aborts without restarting. `servitor-mcp` picks up `SERVITOR_DSN` /
+`SERVITOR_TOKEN` by sourcing the same env file.
 
 ## Environment
 
