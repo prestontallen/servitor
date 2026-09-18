@@ -164,7 +164,8 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 					return 2
 				}
 				why = rest[i+1]
-				rest = append(rest[:i:i], rest[i+1:]...)
+				// drop both the flag and its value
+				rest = append(rest[:i:i], rest[i+2:]...)
 				break
 			}
 		}
