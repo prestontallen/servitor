@@ -13,11 +13,15 @@ Rules:
    (`servitor log <ref> note "..."`), not in commit messages or chat.
 4. Gates: never claim a human approval that didn't happen. Human gates use
    `SERVITOR_ACTOR=human:<name>`.
-5. Multi-agent isolation is enforced, not advisory: this checkout refuses
-   agent commits. Before editing, claim a worktree (skills/devops/worktrees:
-   `git worktree add` + `.claim`), `servitor claim <ref>` the ticket, and
-   release both at the end. A pre-commit hook rejects canonical-checkout
-   commits; SERVITOR_ALLOW_CANONICAL=1 is the loud human exception.
+5. Workflow is branch-per-ticket, merge-by-PR: claim the ticket, work in
+   a claimed worktree on `agent/<agent>/<ticket-slug>`, push the branch,
+   open a PR, and let the human merge. Nothing lands on main directly —
+   see skills/ticket-flow. Multi-agent isolation is enforced, not
+   advisory: this checkout refuses agent commits. Before editing, claim
+   a worktree (skills/devops/worktrees:
+   `git worktree add` + `.claim`). A pre-commit hook rejects
+   canonical-checkout commits; SERVITOR_ALLOW_CANONICAL=1 is the loud
+   human exception.
 6. No commit before the human has seen a work summary; no push without an
    explicit prompt naming what and where.
 
