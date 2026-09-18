@@ -304,6 +304,16 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			e.TicketULID, sub, mustJSON(p), strField(p, "body"), strField(p, "state"), ts)
 		return err
 
+	case "subitem.rank":
+		prefix, _ := p["ulid"].(string)
+		sub, err := resolveSubitem(ctx, tx, e.TicketULID, prefix)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE subitems SET rank=$1, updated_at=$2 WHERE ulid=$3`,
+			numField(p, "rank"), ts, sub)
+		return err
+
 	case "decision":
 		what, _ := p["what"].(string)
 		why, _ := p["why"].(string)
