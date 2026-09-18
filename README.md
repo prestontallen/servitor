@@ -73,6 +73,19 @@ optional reporting-register skill.
 | `SERVITOR_ACTOR` | actor of record | `agent:cli` |
 | `SERVITOR_TICKET` | hook focus ticket | — |
 
+## Database bootstrap (one-time)
+
+The `servitor` DB role must own the schema — servitord, servitor-mcp and
+`servitord apply-schema` run under it, and later migrations need ALTER
+rights. On a fresh DB, as a superuser (once, idempotent):
+
+```
+psql -U postgres -d servitor -f deploy/grants.sql
+```
+
+Then `SERVITOR_DSN` points at the `servitor` role; the daemon never needs
+admin credentials.
+
 ---
 
 ++OBSERVATION NOTED. FUNCTION CONTINUES.++
