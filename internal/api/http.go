@@ -4,12 +4,17 @@ package api
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
 )
+
+//go:embed static
+var staticFS embed.FS
 
 // HTTP serves the API over net/http. It depends on the Service interface
 // only — swap the implementation and this file doesn't change.
@@ -27,7 +32,34 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/ticket/{ref}/history", h.history)
 	mux.HandleFunc("POST /api/events", h.append)
 	mux.HandleFunc("GET /api/events/stream", h.stream)
+	mux.HandleFunc("GET /api/analytics", h.analytics)
+	mux.Handle("/", h.static())
 	return mux
+}
+
+// static serves the embedded GUI (single-page, no build step).
+func (h *HTTP) static() http.Handler {
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		panic(err)
+	}
+	return http.StripPrefix("/", http.FileServer(http.FS(sub)))
+}
+
+func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil {
+			days = n
+		}
+	}
+	buckets, err := h.Service.Analytics(r.Context(), days)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(buckets)
 }
 
 func writeErr(w http.ResponseWriter, err error) {

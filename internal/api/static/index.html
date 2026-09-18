@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>servitor</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+  <h1>servitor</h1>
+  <nav>
+    <button data-view="board" class="active">Board</button>
+    <button data-view="analytics">Activity</button>
+  </nav>
+  <span id="conn" class="conn">connecting…</span>
+</header>
+
+<main>
+  <!-- BOARD -->
+  <section id="view-board">
+    <div class="lanes">
+      <div class="lane" data-status="blocked"><h2>blocked</h2><div class="cards"></div></div>
+      <div class="lane" data-status="active"><h2>active</h2><div class="cards"></div></div>
+      <div class="lane" data-status="queued"><h2>queued</h2><div class="cards"></div></div>
+    </div>
+  </section>
+
+  <!-- TICKET DETAIL -->
+  <section id="view-ticket" hidden>
+    <button class="back">← board</button>
+    <div id="ticket-doc"></div>
+  </section>
+
+  <!-- ANALYTICS -->
+  <section id="view-analytics" hidden>
+    <h2>Ledger activity <small>events per day (continuous aggregate)</small></h2>
+    <div class="range">
+      <button data-days="30" class="active">30d</button>
+      <button data-days="90">90d</button>
+      <button data-days="180">180d</button>
+    </div>
+    <div id="chart"></div>
+    <div id="kindlegend"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

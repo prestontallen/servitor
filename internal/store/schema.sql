@@ -88,6 +88,32 @@ CREATE TABLE ledger_watermark (
 );
 INSERT INTO ledger_watermark (id) VALUES (1);
 
+-- Time-series rollups (real-time continuous aggregates): the GUI charts read
+-- these. Realtime mode unions recent raw data, so today's events appear
+-- without a refresh; the materialization catches up in the background.
+CREATE MATERIALIZED VIEW cagg_events_per_day
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 day', ts) AS day, count(*) AS events
+FROM ledger GROUP BY 1
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW cagg_events_kind_day
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 day', ts) AS day, kind, count(*) AS events
+FROM ledger GROUP BY 1, 2
+WITH NO DATA;
+
+-- Hourly refresh keeps the rollups warm for when the analytics read swaps
+-- from direct GROUP BY to the caggs (see api.Analytics). NOTE: an empty
+-- refresh sets a watermark that hides later rows from the realtime union,
+-- so Analytics does NOT read the caggs until volume justifies the swap.
+SELECT add_continuous_aggregate_policy('cagg_events_per_day',
+    start_offset => INTERVAL '120 days', end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+SELECT add_continuous_aggregate_policy('cagg_events_kind_day',
+    start_offset => INTERVAL '120 days', end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+
 -- Read model is projection-only: writes come from Go inside the append txn,
 -- which sets `SET LOCAL servitor.write = 'on'`. Everything else is rejected.
 CREATE OR REPLACE FUNCTION block_direct_write() RETURNS trigger AS $fn$

@@ -149,6 +149,14 @@ func (c *HTTPClient) Subscribe(ctx context.Context) (Subscription, error) {
 	return Subscription{Changes: ch, Cancel: func() {}}, nil
 }
 
+func (c *HTTPClient) Analytics(ctx context.Context, days int) ([]DayBucket, error) {
+	var out []DayBucket
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/analytics?days=%d", days), nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *HTTPClient) Ping(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/api/healthz", nil, nil)
 }

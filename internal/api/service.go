@@ -98,6 +98,8 @@ type Service interface {
 	Append(ctx context.Context, cmd WriteCmd) (AppendResult, error)
 	// Subscribe streams change notifications (NOTIFY fast path).
 	Subscribe(ctx context.Context) (Subscription, error)
+	// Analytics returns per-day ledger activity (time-series read).
+	Analytics(ctx context.Context, days int) ([]DayBucket, error)
 	// Ping reports reachability (hook degrade path: never blocks a session).
 	Ping(ctx context.Context) error
 }
