@@ -301,6 +301,12 @@ SELECT jsonb_build_object(
   'feedback', COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'finding',l.payload->>'finding',
                              'source',COALESCE(l.payload->>'source','self'),'actor',l.actor,'ts',l.ts) ORDER BY l.id DESC)
                         FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='feedback'), '[]'::jsonb),
+  'lease', (SELECT jsonb_build_object('holder',l.payload->>'holder','tree',l.payload->>'tree',
+                      'host',l.payload->>'host','pid',l.payload->>'pid','ts',l.ts)
+            FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='lease.take'
+            AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.ticket_ulid=t.ulid
+                            AND r.kind='lease.release' AND r.id>l.id)
+            ORDER BY l.id DESC LIMIT 1),
   'head', (SELECT max(id) FROM ledger WHERE ticket_ulid=t.ulid)
 ) FROM t`, ticket).Scan(&doc)
 	if errors.Is(err, pgx.ErrNoRows) {
