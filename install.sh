@@ -212,6 +212,10 @@ check() {
     fi
   done
   unit_installed || { echo "drift: ${HOME}/.config/systemd/user/${UNIT} differs from deploy/${UNIT}"; drift=1; }
+  if [ "$(git -C "${REPO}" config core.hooksPath || true)" != "scripts/hooks" ]; then
+    echo "drift: core.hooksPath is not scripts/hooks (run install.sh to wire the pre-commit guard)"
+    drift=1
+  fi
   if [ -f "${ENV_FILE}" ]; then
     local mode
     mode="$(stat -c '%a' "${ENV_FILE}")"
@@ -250,6 +254,9 @@ build
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
 link_skills
 [ "${WANT_TONE}" -eq 1 ] && link_tone
+# multi-agent isolation: wire the pre-commit guard into this clone
+git -C "${REPO}" config core.hooksPath scripts/hooks
+echo "==> pre-commit guard wired (core.hooksPath=scripts/hooks)"
 restart
 echo "done — binaries in ${BIN_DIR}, skills linked: $(skill_dirs | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"

@@ -411,6 +411,37 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		fmt.Fprintln(stdout, res.EventID)
 		return 0
 
+	// claim/release: lease events on a ticket so concurrent agents see each
+	// other. Pure ledger events (kinds lease.take / lease.release); the ctx
+	// read surfaces the active lease.
+	case "claim":
+		if len(args) < 1 {
+			say("claim: need <ref>")
+			return 2
+		}
+		if err := claimTicket(ctx, c, args[0]); err != nil {
+			say("%v", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "claimed")
+		return 0
+
+	case "release":
+		if len(args) < 1 {
+			say("release: need <ref>")
+			return 2
+		}
+		res, err := c.Append(ctx, api.WriteCmd{
+			Ticket: args[0], Kind: "lease.release", Actor: c.Actor,
+			Payload: map[string]any{"holder": c.Actor},
+		})
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, res.EventID)
+		return 0
+
 	case "gate":
 		if len(args) < 2 {
 			say("gate: need <ref> <contract_approved|presented|shipped>")
@@ -484,6 +515,42 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 	}
 }
 
+// claimTicket appends a lease.take event unless an active lease by another
+// actor exists (check is client-side over history; leases are advisory,
+// not a hard lock).
+func claimTicket(ctx context.Context, c *api.HTTPClient, ref string) error {
+	evs, err := c.History(ctx, ref, 1000)
+	if err != nil {
+		return err
+	}
+	var active *store.LedgerEvent
+	for i := range evs {
+		switch evs[i].Kind {
+		case "lease.take":
+			active = &evs[i]
+		case "lease.release":
+			active = nil
+		}
+	}
+	if active != nil && active.Actor != c.Actor {
+		holder, _ := active.Payload["holder"].(string)
+		return fmt.Errorf("ticket already claimed by %s (holder=%s at %s) — coordinate before claiming; use 'servitor log %s lease.release' if that agent is gone",
+			active.Actor, holder, active.TS.Format(time.RFC3339), ref)
+	}
+	tree, _ := os.Getwd()
+	host, _ := os.Hostname()
+	payload := map[string]any{
+		"holder": c.Actor,
+		"tree":   tree,
+		"host":   host,
+		"pid":    os.Getpid(),
+	}
+	_, err = c.Append(ctx, api.WriteCmd{
+		Ticket: ref, Kind: "lease.take", Actor: c.Actor, Payload: payload,
+	})
+	return err
+}
+
 func encode(w io.Writer, v any) int {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -520,6 +587,9 @@ func usage(w io.Writer) {
   log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)
   add <ref> <criterion|plan|question> <text>
                                    append a subitem (subitem.add)
+  claim <ref>                      take a lease on a ticket (refuses if
+                                   another actor holds an active lease)
+  release <ref>                    release the lease (lease.release)
   decide <ref> <what> --why <why>  record a decision subitem
   subitem <ref> <prefix> [--body B] [--state S] [--rank N]
                                    update/reorder a subitem by ULID prefix

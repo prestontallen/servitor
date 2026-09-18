@@ -1,0 +1,36 @@
+#!/bin/sh
+# pre-commit: multi-agent isolation guard.
+#
+# The canonical checkout is read-only for agents (skills/devops/worktrees).
+# Commits happen in claimed worktrees, which carry a .claim file. This hook
+# makes that rule mechanical instead of honor-system.
+#
+# Override for a human-directed exception: SERVITOR_ALLOW_CANONICAL=1
+# (the override is deliberately loud).
+
+top="$(git rev-parse --show-toplevel)" || exit 1
+gitdir="$(git rev-parse --git-dir)"
+common="$(git rev-parse --git-common-dir)"
+
+# A .claim file means this is a claimed worktree — commits are fine.
+if [ -f "$top/.claim" ]; then
+  exit 0
+fi
+
+if [ "$gitdir" = "$common" ]; then
+  # main checkout (not a linked worktree)
+  branch="$(git symbolic-ref --quiet --short HEAD || echo DETACHED)"
+  echo "refusing commit in the canonical checkout ($branch)." >&2
+  echo "Claim a worktree first: see skills/devops/worktrees (worktree add + .claim)." >&2
+  if [ "${SERVITOR_ALLOW_CANONICAL:-0}" = "1" ]; then
+    echo "SERVITOR_ALLOW_CANONICAL=1 set — allowing canonical commit (exception logged by the caller)." >&2
+    exit 0
+  fi
+  echo "Human-directed exception: run with SERVITOR_ALLOW_CANONICAL=1." >&2
+  exit 1
+fi
+
+# A linked worktree without a claim: someone forgot to write .claim.
+echo "refusing commit: worktree $top has no .claim file." >&2
+echo 'Write one first: printf "pid=$$ branch=<branch>\n" > .claim' >&2
+exit 1
