@@ -52,6 +52,18 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		} else if v := env("SERVITOR_TICKET"); v != "" {
 			ref = v
 		}
+		if ref == "" {
+			board, err := c.Board(ctx)
+			if err != nil {
+				fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
+				return 0
+			}
+			fmt.Fprintf(stdout, "servitor: no focused ticket (set SERVITOR_TICKET). %d open card(s):\n", len(board))
+			for _, c := range board {
+				fmt.Fprintf(stdout, "  [%s] %s (%s)\n", c.Status, c.Slug, c.ULID[:8])
+			}
+			return 0
+		}
 		doc, err := c.Ctx(ctx, ref)
 		if err != nil {
 			fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
