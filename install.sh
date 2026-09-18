@@ -91,7 +91,9 @@ link_tone() {
 build() {
   echo "==> building from ${REPO}"
   echo "==> building GUI (web/ -> internal/api/static)"
-  (cd "${REPO}/web" && npm run build)
+  # npm ci installs exactly what package-lock.json pins (fresh checkouts
+  # have no node_modules; npx would fetch unpinned vite instead)
+  (cd "${REPO}/web" && { [ -x node_modules/.bin/vite ] || npm ci; } && npm run build)
   (cd "${REPO}" && go build -o "${BIN_DIR}" ./cmd/servitor ./cmd/servitord ./cmd/servitor-mcp)
 }
 
