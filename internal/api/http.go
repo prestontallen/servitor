@@ -86,6 +86,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/events/stream", h.stream)
 	mux.HandleFunc("GET /api/feedback", h.feedback)
 	mux.HandleFunc("GET /api/analytics", h.analytics)
+	mux.HandleFunc("GET /api/analytics/handoffs", h.handoffs)
 	mux.Handle("/", h.static())
 	return h.authed(mux)
 }
@@ -151,6 +152,17 @@ func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(buckets)
+}
+
+// handoffs serves per-ticket human/agent round-trip latency.
+func (h *HTTP) handoffs(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.Service.Handoffs(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
 }
 
 func writeErr(w http.ResponseWriter, err error) {

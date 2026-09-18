@@ -235,6 +235,14 @@ func (c *HTTPClient) Analytics(ctx context.Context, days int) ([]DayBucket, erro
 	return out, nil
 }
 
+func (c *HTTPClient) Handoffs(ctx context.Context) ([]store.HandoffRow, error) {
+	var out []store.HandoffRow
+	if err := c.do(ctx, http.MethodGet, "/api/analytics/handoffs", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *HTTPClient) Ping(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/api/healthz", nil, nil)
 }

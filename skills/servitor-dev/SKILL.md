@@ -42,10 +42,15 @@ docker exec timescaledb pg_dump -U postgres servitor \
 docker exec timescaledb psql -U postgres -c "ALTER DATABASE $DB OWNER TO servitor_staging"
 docker exec timescaledb psql -U postgres -d "$STAGE_DB" -c "DO \$\$ DECLARE r record; BEGIN \
   FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='public' LOOP \
-    EXECUTE format('ALTER TABLE %I OWNER TO servitor_staging', r.tablename); END LOOP; \
+    EXECUTE format('ALTER TABLE public.%I OWNER TO servitor_staging', r.tablename); END LOOP; \
   FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname='public' LOOP \
     EXECUTE format('ALTER SEQUENCE %I OWNER TO servitor_staging', r.sequencename); END LOOP; \
 END \$\$;"
+# VERIFY ownership actually moved — a DO block can succeed while changing
+# nothing (seen 2026-09: unqualified tablename left tables owned by the
+# dump owner and the daemon 500'd on permission denied):
+docker exec timescaledb psql -U postgres -d "$STAGE_DB" -c \
+  "SELECT tablename, tableowner FROM pg_tables WHERE schemaname='public'"
 ```
 
 The role/password live in `~/.config/servitor/staging.env`. The staging

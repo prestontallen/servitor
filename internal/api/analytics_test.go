@@ -57,3 +57,34 @@ func TestAnalyticsShape(t *testing.T) {
 	}
 	_ = json.RawMessage{}
 }
+
+func TestHandoffsEndpoint(t *testing.T) {
+	s := svc(t)
+	ctx := context.Background()
+	id := store.NewULID()
+	if _, err := s.Append(ctx, WriteCmd{Ticket: id, Kind: "ticket.create", Actor: "agent:test",
+		Payload: map[string]any{"slug": "handoff-endpoint", "title": "H"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(ctx, WriteCmd{Ticket: id, Kind: "note", Actor: "agent:test",
+		Payload: map[string]any{"v": "presenting"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(ctx, WriteCmd{Ticket: id, Kind: "gate", Actor: "human:preston",
+		Payload: map[string]any{"gate": "presented"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/analytics/handoffs", nil)
+	NewHTTP(s).Routes().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"handoff-endpoint", "human_wait_secs", "agent_wait_secs", "presented_at"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("handoffs response missing %q: %s", want, body)
+		}
+	}
+}

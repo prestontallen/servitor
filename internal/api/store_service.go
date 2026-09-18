@@ -42,6 +42,18 @@ func (ss *StoreService) Board(ctx context.Context) ([]store.Card, error) {
 	return cards, nil
 }
 
+// Handoffs passes through to the store; empty sets stay [] not null.
+func (ss *StoreService) Handoffs(ctx context.Context) ([]store.HandoffRow, error) {
+	rows, err := ss.Store.Handoffs(ctx)
+	if err != nil {
+		return nil, wrapUnreachable(err)
+	}
+	if rows == nil {
+		rows = []store.HandoffRow{}
+	}
+	return rows, nil
+}
+
 // List passes through to the store. The store validates statuses strictly;
 // map that to the stable invalid_status code (422) here.
 func (ss *StoreService) List(ctx context.Context, f store.ListFilter) ([]store.Card, error) {
