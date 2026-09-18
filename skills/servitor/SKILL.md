@@ -64,8 +64,9 @@ servitor history <ref>                 full event timeline
   `field=value` pairs (JSON passthrough if the value looks like JSON).
 - `set x priority=-` removes the field; `""` sets it to empty string.
   Absent vs empty are distinct everywhere (pr is the load-bearing case).
-- `gate` needs `SERVITOR_HUMAN` set (your human identity) for
-  `contract_approved` when the actor isn't already `human:`.
+- `gate` needs a `human:` actor for `contract_approved` — set
+  `SERVITOR_ACTOR=human:<name>` for the call (SERVITOR_HUMAN alone is
+  currently rejected by the CLI; verified 2026-09).
 
 ## MCP tools (when registered)
 
@@ -89,6 +90,45 @@ Key on codes; read messages for detail.
 4. Blocked: `servitor set <ref> --status blocked --on human` — always say
    on WHOM and why in a note.
 5. Abandoning: `--status dropped`. Never fake done.
+
+## Process
+
+Classify at intake and say so; log one intake note with the rating.
+
+- **Tier** decides how much process applies: 0 trivial (one obvious edit),
+  1 small (local change), 2 feature (multi-file / user-visible surface),
+  3 major (cross-cutting or multi-session). When unsure, pick the higher
+  one — downgrading mid-task is cheap, discovering missing process isn't.
+- **Complexity** (low/medium/high) is uncertainty and blast radius, NOT
+  size — a large mechanical change is low, a one-liner in auth is high.
+  It throttles how much investigation the contract phase deserves.
+- **Spikes** ("research X"): deliverable is an answer, not a change. No
+  implementation code on a spike, ever.
+
+**Contract** (tier 1+): present what will exist when the work is done —
+what we build, what we explicitly won't, how we'll prove it — per
+[references/contract.md](references/contract.md), then request the
+`contract_approved` gate. **Do not write implementation code before the
+gate passes** (tier 2+). Tier 0 skips the gate; the one-line done-when
+goes in the intake note.
+
+**Note-worthiness** — log an event when it changes the record, not to
+narrate:
+
+- note: a load-bearing discovery, a blocker's cause, why the plan changed
+- decision: a real tradeoff was made (prefer API/MCP decision events; on
+  the CLI, a note prefixed `DECISION:` and let the human gate it)
+- never: restating tool output, progress chatter, or a re-read of state
+  the ledger already holds
+
+**Hard checkpoints** — every tier, never scaled away, prior approval never
+carries over:
+
+1. No commit before the human has seen a work summary — approach and why,
+   key decisions, core files, deviations. Not a diffstat.
+2. No PR-comment reply without showing the exact text for approval first.
+3. No push without an explicit prompt naming what and where. Approval to
+   commit is not approval to push.
 
 ## Environment
 
