@@ -1,6 +1,7 @@
 <script>
   import { get } from './api.svelte.js';
   import { view, arcs, openArc, kindGlyph, fmtTs, relTs, wordClass, eventText } from './state.svelte.js';
+  import DossierTimeline from './DossierTimeline.svelte';
 
   let doc = $state(null);
   let error = $state(null);
@@ -19,9 +20,6 @@
       .then((h) => (history = h))
       .catch(() => {});
   });
-
-  const GATES = ['contract_approved', 'presented', 'shipped'];
-  const passedGates = $derived(new Set((doc?.gates || []).map((g) => g.gate)));
 
   const parentArc = $derived(doc?.parent ? arcs.list.find((a) => a.ulid === doc.parent) : null);
 
@@ -77,13 +75,7 @@
         {#if doc.pr}<span class="fact">pr: {doc.pr}</span>{/if}
         <span class="fact muted">updated {relTs(doc.updated_at)}</span>
       </div>
-      <div class="ratchet">
-        {#each GATES as g}
-          <span class="gate" class:passed={passedGates.has(g)}>
-            {passedGates.has(g) ? '⊗' : '○'} {g.replace('_approved', '')}
-          </span>
-        {/each}
-      </div>
+      <DossierTimeline {doc} {history} />
     </header>
 
     {#each [
@@ -145,9 +137,6 @@
   .facts { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; margin-bottom: 8px; }
   .fact { color: var(--text-dim); }
   .arc-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11px; cursor: pointer; min-height: 0; }
-  .ratchet { display: flex; gap: 16px; }
-  .gate { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-  .gate.passed { color: var(--ok); }
   .section { margin-bottom: 14px; }
   h3 {
     font-size: 11px;
