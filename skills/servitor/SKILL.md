@@ -85,7 +85,9 @@ Key on codes; read messages for detail.
    (`servitor log <ref> note "..."`). Decisions are events: prefer
    `servitor log <ref> decision "..."` style payloads only via API/MCP —
    on the CLI record decisions in notes and let the human gate them.
-3. Done: `servitor gate <ref> presented`, present the work, then
+3. Before presenting: run the `ponytail-review` skill on the working diff
+   (it reviews diffs, so after code exists, not on the plan) and apply its
+   cuts. Then: `servitor gate <ref> presented`, present the work, then
    `servitor set <ref> --status done` after human acceptance.
 4. Blocked: `servitor set <ref> --status blocked --on human` — always say
    on WHOM and why in a note.
