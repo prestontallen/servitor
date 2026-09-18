@@ -2,9 +2,11 @@
 # Build servitor from this checkout and redeploy it locally.
 #
 # Installs the binaries to ~/.local/bin, installs deploy/servitord.service
-# into ~/.config/systemd/user (and restarts the servitord user unit), and links the servitor skill into every detected agent skill
-# directory (Hermes: ~/.hermes/skills, Claude: ~/.claude/skills), so skill
-# edits are live immediately and binary edits take effect after restart.
+# into ~/.config/systemd/user (and restarts the servitord user unit), and
+# links the servitor, servitor-dev and ticket-flow skills into every
+# detected agent skill directory (Hermes: ~/.hermes/skills, Claude:
+# ~/.claude/skills), so skill edits are live immediately and binary edits
+# take effect after restart.
 #
 # Usage: ./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 #   --check    report drift and exit 1 if the deployed state differs
@@ -25,17 +27,18 @@ ENV_DIR="${HOME}/.config/servitor"
 
 BINARIES=(servitor servitord servitor-mcp)
 
-# agent skill roots to try; the skill links into <root>/servitor
+# agent skill roots to try; each skill links to <root>/<name>
 SKILL_TARGETS=(
   "${HOME}/.hermes/skills"
   "${HOME}/.claude/skills"
 )
 
-skill_dirs() {
+skill_roots() {
   local root
   for root in "${SKILL_TARGETS[@]}"; do
-    [ -d "${root}" ] && echo "${root}/servitor"
+    [ -d "${root}" ] && echo "${root}"
   done
+  return 0
 }
 
 unit_installed() {
@@ -80,25 +83,14 @@ if [ "${WANT_TONE}" -eq 0 ] && [ "${TONE_ASKED:-0}" -eq 0 ] && [ -t 0 ]; then
 fi
 TONE_ASKED=1
 
-tone_link_state() {
-  # echo "linked" | "missing" | "absent" per agent skill root
-  local dest
-  for dest in $(skill_dirs); do
-    if [ -L "${dest}/../servitor-tone/SKILL.md" ]; then
-      echo "linked"
-    else
-      echo "absent"
-    fi
-  done
-}
-
-link_tone() {
-  local dest found=0
-  for dest in $(skill_dirs); do
-    echo "==> linking servitor-tone skill into ${dest}"
-    ln -sfn "${REPO}/skills/servitor-tone" "${dest}/../servitor-tone"
-    ln -sfn "${REPO}/skills/servitor-dev" "${dest}/../servitor-dev"
-    ln -sfn "${REPO}/skills/ticket-flow" "${dest}/../ticket-flow"
+link_skill() {
+  # link_skill NAME: symlink skills/NAME into every detected agent skill root
+  local name="$1" root found=0
+  for root in $(skill_roots); do
+    echo "==> linking ${name} skill into ${root}"
+    # older installs made <root>/servitor a real directory of file links
+    [ -d "${root}/${name}" ] && [ ! -L "${root}/${name}" ] && rm -rf "${root}/${name}"
+    ln -sfn "${REPO}/skills/${name}" "${root}/${name}"
     found=1
   done
   [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
@@ -111,18 +103,6 @@ build() {
   # have no node_modules; npx would fetch unpinned vite instead)
   (cd "${REPO}/web" && { [ -x node_modules/.bin/vite ] || npm ci; } && npm run build)
   (cd "${REPO}" && go build -o "${BIN_DIR}" ./cmd/servitor ./cmd/servitord ./cmd/servitor-mcp)
-}
-
-link_skills() {
-  local dest found=0
-  for dest in $(skill_dirs); do
-    echo "==> linking skill into ${dest}"
-    mkdir -p "${dest}"
-    ln -sfn "${REPO}/skills/servitor/SKILL.md" "${dest}/SKILL.md"
-    ln -sfn "${REPO}/skills/servitor/references" "${dest}/references"
-    found=1
-  done
-  [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
 }
 
 restart() {
@@ -204,19 +184,13 @@ check() {
       rm -f "/tmp/servitor-check-${b}"
     fi
   done
-  for dest in $(skill_dirs); do
-    if [ -L "${dest}/SKILL.md" ] && [ "$(readlink "${dest}/SKILL.md")" = "${REPO}/skills/servitor/SKILL.md" ]; then
-      :
-    else
-      echo "drift: ${dest}/SKILL.md is not linked to this checkout"
-      drift=1
-    fi
+  for dest in $(skill_roots); do
+    for b in servitor servitor-dev ticket-flow; do
+      [ "$(readlink "${dest}/${b}" 2>/dev/null)" = "${REPO}/skills/${b}" ] \
+        || { echo "drift: ${dest}/${b} is not linked to this checkout"; drift=1; }
+    done
   done
   unit_installed || { echo "drift: ${HOME}/.config/systemd/user/${UNIT} differs from deploy/${UNIT}"; drift=1; }
-  if [ "$(git -C "${REPO}" config core.hooksPath || true)" != "scripts/hooks" ]; then
-    echo "drift: core.hooksPath is not scripts/hooks (run install.sh to wire the pre-commit guard)"
-    drift=1
-  fi
   if [ -f "${ENV_FILE}" ]; then
     local mode
     mode="$(stat -c '%a' "${ENV_FILE}")"
@@ -227,11 +201,6 @@ check() {
   fi
   systemctl --user is-active --quiet "${UNIT}" \
     || { echo "drift: ${UNIT} is not running"; drift=1; }
-  # tone skill is optional: informational, not drift
-  local st
-  for st in $(tone_link_state); do
-    echo "servitor-tone: ${st} (optional; install.sh --tone to enable)"
-  done
   exit "${drift}"
 }
 
@@ -253,11 +222,8 @@ build
 # schema must be current before the daemon restarts onto it; use the file's
 # DSN (may have just been written by --dsn)
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
-link_skills
-[ "${WANT_TONE}" -eq 1 ] && link_tone
-# multi-agent isolation: wire the pre-commit guard into this clone
-git -C "${REPO}" config core.hooksPath scripts/hooks
-echo "==> pre-commit guard wired (core.hooksPath=scripts/hooks)"
+for s in servitor servitor-dev ticket-flow; do link_skill "${s}"; done
+[ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 restart
-echo "done — binaries in ${BIN_DIR}, skills linked: $(skill_dirs | tr '\n' ' ')"
+echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
