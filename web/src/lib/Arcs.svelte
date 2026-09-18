@@ -1,5 +1,5 @@
 <script>
-  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOf, fmtTs } from './state.svelte.js';
+  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOf, ageOfState, fmtTs } from './state.svelte.js';
   import { live } from './live.svelte.js';
 
   let expanded = $state({});
@@ -77,10 +77,16 @@
       {#if expanded[a.ulid]}
         <ul class="members">
           {#each a.members as m (m.ulid)}
+            {@const ma = ageOfState(m.status, m.blocked_since, m.updated_at)}
             <li onclick={() => openTicket(m.ulid)}>
               <span class="m-status s-{m.status}">{m.status}</span>
               <span class="m-title">{m.title || m.slug}</span>
               <span class="muted m-slug">{m.slug}</span>
+              {#if ma}
+                <span class="age" class:stale={ma.stale}>
+                  {m.status === 'blocked' ? '⏸' : '·'} {relTs(ma.ts)}
+                </span>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -149,6 +155,8 @@
   .s-blocked { color: var(--fail); }
   .s-done { color: var(--ok); }
   .m-title { flex: 1; }
+  .age { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+  .age.stale { color: var(--warn); font-weight: 600; }
   .m-slug { font-size: 10px; }
   .empty { line-height: 1.8; }
   code { color: var(--accent); }

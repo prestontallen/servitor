@@ -1,15 +1,10 @@
 <script>
-  import { board, openTicket, wordClass, ageOf, relTs } from './state.svelte.js';
+  import { board, openTicket, wordClass, ageOfState, relTs } from './state.svelte.js';
 
   const lanes = ['blocked', 'active', 'queued'];
   const byLane = $derived(
     Object.fromEntries(lanes.map((s) => [s, board.cards.filter((c) => c.status === s)]))
   );
-
-  // age display: blocked uses blocked_since, others last activity
-  function age(c) {
-    return ageOf(c.status === 'blocked' ? c.blocked_since : c.updated_at);
-  }
 </script>
 
 <section class="lanes">
@@ -17,7 +12,7 @@
     <div class="lane">
       <h2>{lane} · {byLane[lane].length}</h2>
       {#each byLane[lane] as c (c.ulid)}
-        {@const a = age(c)}
+        {@const a = ageOfState(c.status, c.blocked_since, c.updated_at)}
         <div class="card panel" class:stale={a?.stale} onclick={() => openTicket(c.ulid)}>
           <div class="title">{c.title || c.slug}</div>
           <div class="meta">
@@ -27,7 +22,7 @@
             {#if a}
               <span class="age" class:stale={a.stale}
                 title={c.status === 'blocked' ? 'blocked since' : 'last activity'}>
-                {c.status === 'blocked' ? '⏸' : '·'} {relTs(c.status === 'blocked' ? c.blocked_since : c.updated_at)}
+                {c.status === 'blocked' ? '⏸' : '·'} {relTs(a.ts)}
               </span>
             {/if}
           </div>
