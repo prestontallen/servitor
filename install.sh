@@ -6,16 +6,22 @@
 # directory (Hermes: ~/.hermes/skills, Claude: ~/.claude/skills), so skill
 # edits are live immediately and binary edits take effect after restart.
 #
-# Usage: ./install.sh [--check] [--tone|--no-tone]
+# Usage: ./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 #   --check    report drift and exit 1 if the deployed state differs
 #   --tone     link the optional servitor-tone skill (terse procedural
 #              reporting register) into every detected agent skill directory
 #   --no-tone  skip the tone-skill prompt (non-interactive installs)
+#   --dsn URL  write SERVITOR_DSN into ~/.config/servitor/servitord.env
+#              (mode 0600) and run `servitord apply-schema` against it
+#              before restarting. Never committed to the repo.
+#   --token T  write SERVITOR_TOKEN into the same env file (API auth).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${HOME}/.local/bin"
 UNIT="servitord.service"
+ENV_FILE="${HOME}/.config/servitor/servitord.env"
+ENV_DIR="${HOME}/.config/servitor"
 
 BINARIES=(servitor servitord servitor-mcp)
 
@@ -47,12 +53,20 @@ install_unit() {
 }
 
 WANT_TONE=0
-for arg in "$@"; do
-  case "${arg}" in
+WANT_DSN=""
+WANT_TOKEN=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --tone) WANT_TONE=1 ;;
     --no-tone) WANT_TONE=0; TONE_ASKED=1 ;;
     --check) WANT_CHECK=1 ;;
+    --dsn) WANT_DSN="${2:-}"; shift ;;
+    --dsn=*) WANT_DSN="${1#*=}" ;;
+    --token) WANT_TOKEN="${2:-}"; shift ;;
+    --token=*) WANT_TOKEN="${1#*=}" ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 # prompt for the optional tone skill unless the choice was made by flag
@@ -118,6 +132,67 @@ restart() {
   echo "servitord active"
 }
 
+# env line helpers: write_env_file installs a fresh env file; ensure_env_file
+# creates it only when missing (reruns without --dsn preserve what's there).
+env_value() {
+  # env_value FILE KEY -> value after KEY= (values may contain '=')
+  sed -n "s/^${1}=//p" "$2" | head -1
+}
+
+current_unit_dsn() {
+  # reuse the DSN from an already-installed unit, if any (migration path)
+  local installed="${HOME}/.config/systemd/user/${UNIT}" dsn
+  [ -f "${installed}" ] || return 1
+  dsn="$(env_value "Environment=SERVITOR_DSN" "${installed}")"
+  [ -n "${dsn}" ] || return 1
+  printf '%s\n' "${dsn}"
+}
+
+write_env_file() {
+  local dsn="$1" token="$2"
+  mkdir -p "${ENV_DIR}"
+  {
+    echo "SERVITOR_DSN=${dsn}"
+    [ -n "${token}" ] && echo "SERVITOR_TOKEN=${token}"
+  } > "${ENV_FILE}"
+  chmod 0600 "${ENV_FILE}"
+}
+
+ensure_env_file() {
+  local dsn token="" existing_token=""
+  if [ -f "${ENV_FILE}" ]; then
+    if [ -z "${WANT_DSN}" ] && [ -z "${WANT_TOKEN}" ]; then
+      echo "==> keeping existing ${ENV_FILE} (pass --dsn to change it)"
+      return
+    fi
+    # rewrite, preserving whatever the caller didn't override
+    existing_token="$(env_value SERVITOR_TOKEN "${ENV_FILE}")"
+  fi
+  if [ -n "${WANT_DSN}" ]; then
+    dsn="${WANT_DSN}"
+  elif [ -f "${ENV_FILE}" ]; then
+    dsn="$(env_value SERVITOR_DSN "${ENV_FILE}")"
+  elif dsn="$(current_unit_dsn)"; then
+    echo "==> migrating existing unit DSN into ${ENV_FILE}"
+  else
+    dsn="postgres://localhost:5432/servitor?sslmode=disable"
+  fi
+  if [ -n "${WANT_TOKEN}" ]; then token="${WANT_TOKEN}"
+  elif [ -n "${existing_token}" ]; then token="${existing_token}"; fi
+  write_env_file "${dsn}" "${token}"
+  echo "==> wrote ${ENV_FILE} (mode 0600)"
+}
+
+apply_schema() {
+  local dsn="$1"
+  echo "==> applying schema"
+  if ! SERVITOR_DSN="${dsn}" "${BIN_DIR}/servitord" apply-schema; then
+    echo "ERROR: apply-schema failed against ${dsn%%:*}://…" >&2
+    echo "       not restarting into a broken schema; fix the DSN and rerun." >&2
+    exit 1
+  fi
+}
+
 check() {
   local drift=0 b dest
   for b in "${BINARIES[@]}"; do
@@ -137,6 +212,14 @@ check() {
     fi
   done
   unit_installed || { echo "drift: ${HOME}/.config/systemd/user/${UNIT} differs from deploy/${UNIT}"; drift=1; }
+  if [ -f "${ENV_FILE}" ]; then
+    local mode
+    mode="$(stat -c '%a' "${ENV_FILE}")"
+    [ "${mode}" = "600" ] || { echo "drift: ${ENV_FILE} mode is ${mode}, want 600"; drift=1; }
+  else
+    echo "drift: ${ENV_FILE} does not exist (run install.sh, optionally --dsn)"
+    drift=1
+  fi
   systemctl --user is-active --quiet "${UNIT}" \
     || { echo "drift: ${UNIT} is not running"; drift=1; }
   # tone skill is optional: informational, not drift
@@ -153,12 +236,20 @@ if [ "${WANT_CHECK:-0}" -eq 1 ]; then
   check
 fi
 
+# env file first: it may migrate the DSN out of an installed unit, so it
+# must run before install_unit replaces that unit with the template
+ensure_env_file
+
 if ! unit_installed; then
   install_unit
 fi
 
 build
+# schema must be current before the daemon restarts onto it; use the file's
+# DSN (may have just been written by --dsn)
+apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
 link_skills
 [ "${WANT_TONE}" -eq 1 ] && link_tone
 restart
 echo "done — binaries in ${BIN_DIR}, skills linked: $(skill_dirs | tr '\n' ' ')"
+echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
