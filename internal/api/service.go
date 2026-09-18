@@ -89,6 +89,7 @@ type Subscription struct {
 type FeedbackFilter struct {
 	Since  *time.Time
 	Source string
+	Tag    string
 	Limit  int
 }
 

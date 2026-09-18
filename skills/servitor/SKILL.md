@@ -56,6 +56,8 @@ servitor set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
 servitor log <ref> <kind> [text]                 e.g. note; or any ledger kind
 servitor gate <ref> <contract_approved|presented|shipped>
 servitor history <ref>                 full event timeline
+servitor feedback [--since DATE] [--source human|self] [--tag TAG] [--limit N]
+                                       feedback events across all tickets
 ```
 
 - `ref` is a ULID or slug, case-insensitive.
@@ -122,6 +124,26 @@ narrate:
   the CLI, a note prefixed `DECISION:` and let the human gate it)
 - never: restating tool output, progress chatter, or a re-read of state
   the ledger already holds
+
+**Feedback (friction capture)** — when friction happens in a session, log it
+in the moment, one line, as a feedback event on the ticket:
+
+```
+servitor log <ref> feedback '{"source":"self|human","tag":"correction|rework|stall|drift","finding":"one line"}'
+```
+
+- `finding` is REQUIRED (the store rejects feedback without it); `source`
+  defaults to `self`. `source: human` — the human corrected or redirected
+  the agent; `self` — the agent caught its own miss (stall, wrong
+  assumption, rework). `tag` is a free extra field for slicing.
+- tags so far: `correction` (user re-steered mid-turn). Add a tag when one
+  is first used, not before.
+- Review what's already in the repo/code BEFORE proposing — the most common
+  correction is proposing something that already exists. Checking first is
+  cheaper than a correction event.
+- Feedback loop: query `servitor feedback --tag TAG`; when the same tag or
+  pattern recurs across sessions, propose a SKILL EDIT (not a memory) that
+  prevents it. The fix lands in the skill the next session will load.
 
 **Hard checkpoints** — every tier, never scaled away, prior approval never
 carries over:

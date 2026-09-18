@@ -9,6 +9,7 @@ import (
 type FeedbackFilter struct {
 	Since  *time.Time // ts >= Since
 	Source string    // payload->>'source' exact match; empty = any
+	Tag    string    // payload->>'tag' exact match; empty = any
 	Limit  int
 }
 
@@ -25,9 +26,10 @@ FROM ledger
 WHERE kind='feedback'
   AND ($1::timestamptz IS NULL OR ts >= $1)
   AND ($2::text IS NULL OR payload->>'source' = $2)
+  AND ($3::text IS NULL OR payload->>'tag' = $3)
 ORDER BY id DESC
-LIMIT $3`,
-		f.Since, nullableString(f.Source), f.Limit)
+LIMIT $4`,
+		f.Since, nullableString(f.Source), nullableString(f.Tag), f.Limit)
 	if err != nil {
 		return nil, err
 	}

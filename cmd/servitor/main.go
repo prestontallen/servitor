@@ -476,6 +476,11 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 				if i < len(args) {
 					f.Source = args[i]
 				}
+			case "--tag":
+				i++
+				if i < len(args) {
+					f.Tag = args[i]
+				}
 			case "--limit":
 				i++
 				if i < len(args) {
@@ -537,7 +542,7 @@ func usage(w io.Writer) {
   decide <ref> <what> --why <why>  record a decision subitem
   subitem <ref> <prefix> [--body B] [--state S] [--rank N]
                                    update/reorder a subitem by ULID prefix
-  feedback [--since DATE] [--source human|self] [--limit N]
+  feedback [--since DATE] [--source human|self] [--tag TAG] [--limit N]
                                    feedback events across all tickets
   gate <ref> <gate>                contract_approved requires SERVITOR_HUMAN
   history <ref>                    full event timeline
