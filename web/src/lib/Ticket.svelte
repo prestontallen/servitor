@@ -62,7 +62,8 @@
       <div class="kv">
         <span class="badge">{doc.slug}</span>
         <span class="badge">{doc.status}</span>
-        {#if doc.card_word}<span class="badge {wordClass(doc.card_word)}">{doc.card_word}</span>{/if}
+        <!-- card words are for cards on the board: done/dropped shows status only -->
+        {#if doc.card_word && !['done', 'dropped'].includes(doc.status)}<span class="badge {wordClass(doc.card_word)}">{doc.card_word}</span>{/if}
         {#if doc.blocked_on}<span class="badge blocked_on">on {doc.blocked_on} {relTs(doc.blocked_since)}</span>{/if}
       </div>
       <h2>{doc.title || doc.slug}</h2>

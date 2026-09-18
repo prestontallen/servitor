@@ -33,9 +33,13 @@ export function connectStream() {
     ingest(c.ticket);
   });
   es.onerror = () => {
-    // EventSource auto-reconnects; keep the stream object and show the
-    // degraded state until the next onopen proves the link is back.
+    // Don't trust native EventSource reconnection after a servitord
+    // restart (it has stalled on "signal lost" here). Close and dial
+    // again ourselves, capped exponential backoff, reset on onopen.
     live.status = 'down';
+    es.close();
+    setTimeout(connectStream, backoff);
+    backoff = Math.min(backoff * 2, 30000);
   };
 }
 
