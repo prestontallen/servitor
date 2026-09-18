@@ -83,6 +83,7 @@ link_tone() {
   for dest in $(skill_dirs); do
     echo "==> linking servitor-tone skill into ${dest}"
     ln -sfn "${REPO}/skills/servitor-tone" "${dest}/../servitor-tone"
+    ln -sfn "${REPO}/skills/servitor-dev" "${dest}/../servitor-dev"
     found=1
   done
   [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
