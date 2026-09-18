@@ -1,10 +1,15 @@
 <script>
-  import { board, openTicket, wordClass } from './state.svelte.js';
+  import { board, openTicket, wordClass, ageOf, relTs } from './state.svelte.js';
 
   const lanes = ['blocked', 'active', 'queued'];
   const byLane = $derived(
     Object.fromEntries(lanes.map((s) => [s, board.cards.filter((c) => c.status === s)]))
   );
+
+  // age display: blocked uses blocked_since, others last activity
+  function age(c) {
+    return ageOf(c.status === 'blocked' ? c.blocked_since : c.updated_at);
+  }
 </script>
 
 <section class="lanes">
@@ -12,12 +17,19 @@
     <div class="lane">
       <h2>{lane} · {byLane[lane].length}</h2>
       {#each byLane[lane] as c (c.ulid)}
-        <div class="card panel" onclick={() => openTicket(c.ulid)}>
+        {@const a = age(c)}
+        <div class="card panel" class:stale={a?.stale} onclick={() => openTicket(c.ulid)}>
           <div class="title">{c.title || c.slug}</div>
           <div class="meta">
             <span class="muted">{c.slug}</span>
             {#if c.card_word}<span class="badge {wordClass(c.card_word)}">{c.card_word}</span>{/if}
-            {#if c.status === 'blocked'}<span class="badge blocked_on">on {c.blocked_on}</span>{/if}
+            {#if c.status === 'blocked' && c.blocked_on}<span class="badge blocked_on">on {c.blocked_on}</span>{/if}
+            {#if a}
+              <span class="age" class:stale={a.stale}
+                title={c.status === 'blocked' ? 'blocked since' : 'last activity'}>
+                {c.status === 'blocked' ? '⏸' : '·'} {relTs(c.status === 'blocked' ? c.blocked_since : c.updated_at)}
+              </span>
+            {/if}
           </div>
         </div>
       {:else}
@@ -41,13 +53,15 @@
     border-bottom: 1px solid var(--line-strong);
     padding-bottom: 5px;
   }
-  .card {
-    padding: 9px 11px;
-    margin-bottom: 10px;
-    cursor: pointer;
-  }
-  .card:hover { border-color: var(--rust); }
-  .title { margin-bottom: 4px; }
+  .card { padding: 10px 12px; margin-bottom: 10px; cursor: pointer; }
+  .card:hover { border-color: var(--accent); }
+  .card.stale { border-color: var(--warn); }
+  .title { margin-bottom: 5px; }
   .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 11px; }
+  .age { color: var(--text-dim); }
+  .age.stale { color: var(--warn); font-weight: 600; }
   .empty { margin: 0; }
+  @media (max-width: 900px) {
+    .lanes { grid-template-columns: 1fr; }
+  }
 </style>

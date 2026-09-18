@@ -1,41 +1,63 @@
-/* servitor GUI — Forge World (default) / Auspex (alternate) themes.
-   All colors via custom properties; the toggle swaps [data-theme] on <html>. */
+/* servitor GUI — neutral light/dark base (data-mode) with accent palettes
+   (data-accent). Accents define only accent/status colors; surfaces and
+   text stay neutral in both modes. */
 
 :root,
-:root[data-theme='forge'] {
-  --bg: #17130f;
-  --bg-raised: #221c15;
-  --bg-inset: #12100c;
-  --line: #3a2f22;
-  --line-strong: #55432e;
-  --rust: #c1440e;
-  --rust-dim: #7a2c0c;
-  --brass: #b08d57;
-  --brass-dim: #7d6434;
-  --text: #e8dcc0;
-  --text-dim: #8a7d68;
-  --auspex: #57d977;
-  --amber: #d9a441;
-  --red: #d24a3a;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+:root[data-mode='dark'] {
+  --bg: #141414;
+  --bg-raised: #1d1d1d;
+  --bg-inset: #101010;
+  --line: #2c2c2c;
+  --line-strong: #3d3d3d;
+  --text: #d8d8d4;
+  --text-dim: #8a8a84;
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  --flash-bg: rgba(255, 255, 255, 0.08);
 }
 
-:root[data-theme='auspex'] {
-  --bg: #060a07;
-  --bg-raised: #0a120c;
-  --bg-inset: #040704;
-  --line: #16351f;
-  --line-strong: #235a32;
-  --rust: #ffb454;
-  --rust-dim: #915f22;
-  --brass: #3dff7a;
-  --brass-dim: #1d8f45;
-  --text: #7dffab;
-  --text-dim: #3f8f5b;
-  --auspex: #3dff7a;
-  --amber: #ffb454;
-  --red: #ff6a54;
-  --shadow: 0 2px 12px rgba(0, 40, 15, 0.6);
+:root[data-mode='light'] {
+  --bg: #f4f4f2;
+  --bg-raised: #ffffff;
+  --bg-inset: #e9e9e6;
+  --line: #d9d9d4;
+  --line-strong: #c2c2bb;
+  --text: #26261f;
+  --text-dim: #6f6f66;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --flash-bg: rgba(0, 0, 0, 0.05);
+}
+
+/* accent: forge (rust) */
+:root,
+:root[data-accent='forge'] {
+  --accent: #c1440e;
+  --accent-dim: #7a2c0c;
+  --ok: #3f8f4a;
+  --warn: #b07818;
+  --fail: #c0392b;
+}
+:root[data-mode='dark'][data-accent='forge'] {
+  --accent: #d95f2b;
+  --accent-dim: #8a3d14;
+  --ok: #57b565;
+  --warn: #d9a441;
+  --fail: #d24a3a;
+}
+
+/* accent: auspex (green) */
+:root[data-accent='auspex'] {
+  --accent: #1d7a3d;
+  --accent-dim: #145c2d;
+  --ok: #1d7a3d;
+  --warn: #b07818;
+  --fail: #c0392b;
+}
+:root[data-mode='dark'][data-accent='auspex'] {
+  --accent: #3fae62;
+  --accent-dim: #1d8f45;
+  --ok: #3fae62;
+  --warn: #d9a441;
+  --fail: #d95c4a;
 }
 
 * { box-sizing: border-box; }
@@ -45,71 +67,78 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-monospace, 'JetBrains Mono', 'IBM Plex Mono', 'Cascadia Mono', Menlo, monospace;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 13px;
   line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
 }
 
-h1, h2, h3, .display {
-  font-family: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', 'Roboto Condensed', sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+h1, h2, h3 {
   font-weight: 600;
-  color: var(--brass);
+  letter-spacing: 0.01em;
+  color: var(--text);
 }
 
-a { color: var(--brass); }
+a { color: var(--accent); }
 
 button {
   font: inherit;
   color: var(--text);
-  background: var(--bg-raised);
+  background: transparent;
   border: 1px solid var(--line-strong);
   padding: 3px 10px;
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 11px;
+  border-radius: 3px;
+  font-size: 12px;
+  touch-action: manipulation;
 }
-button:hover { border-color: var(--brass); color: var(--brass); }
-button.active { background: var(--brass-dim); color: var(--bg); border-color: var(--brass); }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-raised);
+}
+
+/* touch: comfortable targets on coarse pointers (iPad/phone) */
+@media (pointer: coarse) {
+  button { min-height: 44px; min-width: 44px; padding: 6px 14px; }
+}
 
 .badge {
   display: inline-block;
   padding: 0 6px;
-  border: 1px solid var(--brass-dim);
-  color: var(--brass);
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
 }
-.badge.blocked_on { border-color: var(--red); color: var(--red); }
+.badge.blocked_on { border-color: var(--fail); color: var(--fail); }
 .badge.word-shaping { border-color: var(--text-dim); color: var(--text-dim); }
-.badge.word-building { border-color: var(--brass); color: var(--brass); }
-.badge.word-checking { border-color: var(--amber); color: var(--amber); }
-.badge.word-shipping { border-color: var(--auspex); color: var(--auspex); }
+.badge.word-building { border-color: var(--accent); color: var(--accent); }
+.badge.word-checking { border-color: var(--warn); color: var(--warn); }
+.badge.word-shipping { border-color: var(--ok); color: var(--ok); }
 
-/* gothic double-line panel */
+/* flat panel: single border */
 .panel {
   background: var(--bg-raised);
-  border: 1px solid var(--line-strong);
-  outline: 1px solid var(--line);
-  outline-offset: 2px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
 
 .muted { color: var(--text-dim); }
 .meta-inline { color: var(--text-dim); font-size: 11px; }
 
-.state-pass { color: var(--auspex); }
-.state-fail { color: var(--red); }
+.state-pass { color: var(--ok); }
+.state-fail { color: var(--fail); }
 
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash {
-  0% { background-color: color-mix(in srgb, var(--auspex) 35%, transparent); }
+  0% { background-color: var(--flash-bg); }
   100% { background-color: transparent; }
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--line-strong); }
-::-webkit-scrollbar-track { background: var(--bg-inset); }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }

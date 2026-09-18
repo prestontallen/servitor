@@ -1,6 +1,6 @@
 <script>
   import { get } from './api.svelte.js';
-  import { view, show, kindGlyph, fmtTs, wordClass, eventText } from './state.svelte.js';
+  import { view, arcs, openArc, kindGlyph, fmtTs, relTs, wordClass, eventText } from './state.svelte.js';
 
   let doc = $state(null);
   let error = $state(null);
@@ -15,7 +15,7 @@
     get(`/api/ticket/${ref}`)
       .then((d) => (doc = d))
       .catch((e) => (error = e.message));
-    get(`/api/ticket/${ref}/history?limit=200`)
+    get(`/api/ticket/${ref}/history?limit=500`)
       .then((h) => (history = h))
       .catch(() => {});
   });
@@ -23,23 +23,39 @@
   const GATES = ['contract_approved', 'presented', 'shipped'];
   const passedGates = $derived(new Set((doc?.gates || []).map((g) => g.gate)));
 
-  function actorClass(actor) {
-    if (!actor) return 'agent';
-    return actor.startsWith('human') ? 'human' : 'agent';
-  }
+  const parentArc = $derived(doc?.parent ? arcs.list.find((a) => a.ulid === doc.parent) : null);
 
-  function section(name, items, render) {
-    if (!items || items.length === 0) return { name, items, render };
-    return { name, items, render };
-  }
+  // provenance / relations free fields
+  const fields = $derived(doc?.fields || {});
+  const prov = $derived(
+    ['source', 'source_ref', 'depends', 'area'].filter((k) => fields[k] !== undefined)
+  );
+
+  // signals get full rows; consecutive transitions collapse into one
+  // compact line each, newest first, grouped under day separators.
+  const rows = $derived.by(() => {
+    const sorted = [...history].sort((a, b) => b.id - a.id);
+    const out = [];
+    let lastDay = '';
+    for (const e of sorted) {
+      const day = new Date(e.ts).toDateString();
+      if (day !== lastDay) {
+        out.push({ type: 'day', day, id: 'day-' + e.id });
+        lastDay = day;
+      }
+      const isSignal = e.class === 'signal';
+      out.push({ type: isSignal ? 'signal' : 'transition', e, id: e.id });
+    }
+    return out;
+  });
 </script>
 
-<button class="back" onclick={() => show('board')}>← board</button>
+<button class="back" onclick={() => doc?.parent ? openArc(doc.parent) : (location.hash = '#/arcs')}>← back</button>
 
 {#if error}
   <p class="muted">unreachable: {error}</p>
 {:else if !doc}
-  <p class="muted">querying machine spirit…</p>
+  <p class="muted">querying…</p>
 {:else}
   <article class="panel dossier">
     <header>
@@ -47,9 +63,19 @@
         <span class="badge">{doc.slug}</span>
         <span class="badge">{doc.status}</span>
         {#if doc.card_word}<span class="badge {wordClass(doc.card_word)}">{doc.card_word}</span>{/if}
-        {#if doc.pr !== null && doc.pr !== undefined}<span class="muted">pr: {doc.pr || '(empty)'}</span>{/if}
+        {#if doc.blocked_on}<span class="badge blocked_on">on {doc.blocked_on} {relTs(doc.blocked_since)}</span>{/if}
       </div>
       <h2>{doc.title || doc.slug}</h2>
+      <div class="facts">
+        {#if parentArc}
+          <button class="fact arc-link" onclick={() => openArc(parentArc.ulid)}>arc: {parentArc.slug}</button>
+        {/if}
+        {#each prov as k (k)}
+          <span class="fact">{k}: {fields[k]}</span>
+        {/each}
+        {#if doc.pr}<span class="fact">pr: {doc.pr}</span>{/if}
+        <span class="fact muted">updated {relTs(doc.updated_at)}</span>
+      </div>
       <div class="ratchet">
         {#each GATES as g}
           <span class="gate" class:passed={passedGates.has(g)}>
@@ -85,14 +111,24 @@
     <div class="section">
       <h3>history</h3>
       <ul class="history">
-        {#each history as e (e.id)}
-          <li>
-            <span class="glyph">{kindGlyph(e.kind)}</span>
-            <span class="muted">{e.kind}</span>
-            <span>{eventText(e)}</span>
-            <span class="actor {actorClass(e.actor)}">{e.actor}</span>
-            <span class="meta-inline">{e.ts ? fmtTs(e.ts) : ''}</span>
-          </li>
+        {#each rows as r (r.id)}
+          {#if r.type === 'day'}
+            <li class="daysep"><span>{r.day}</span></li>
+          {:else if r.type === 'signal'}
+            <li class="signal">
+              <span class="glyph">{kindGlyph(r.e.kind)}</span>
+              <span class="muted kind">{r.e.kind}</span>
+              <span class="line">{eventText(r.e)}</span>
+              <span class="actor" class:human={r.e.actor_type === 'human'}>{r.e.actor}</span>
+              <span class="meta-inline" title={fmtTs(r.e.ts)}>{relTs(r.e.ts)}</span>
+            </li>
+          {:else}
+            <li class="transition">
+              <span class="muted kind">{r.e.kind}</span>
+              <span class="line muted">{eventText(r.e)}</span>
+              <span class="meta-inline" title={fmtTs(r.e.ts)}>{relTs(r.e.ts)}</span>
+            </li>
+          {/if}
         {/each}
       </ul>
     </div>
@@ -101,13 +137,16 @@
 
 <style>
   .back { margin-bottom: 12px; }
-  .dossier { max-width: 980px; margin: 0 auto; padding: 16px 20px; }
+  .dossier { max-width: 860px; margin: 0 auto; padding: 16px 20px; }
   header { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
-  .kv { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .kv { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
   h2 { margin: 0 0 8px; font-size: 16px; }
+  .facts { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; margin-bottom: 8px; }
+  .fact { color: var(--text-dim); }
+  .arc-link { border: none; background: none; padding: 0; color: var(--accent); font-size: 11px; cursor: pointer; min-height: 0; }
   .ratchet { display: flex; gap: 16px; }
   .gate { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-  .gate.passed { color: var(--auspex); }
+  .gate.passed { color: var(--ok); }
   .section { margin-bottom: 14px; }
   h3 {
     font-size: 11px;
@@ -122,11 +161,19 @@
     display: flex;
     gap: 10px;
     align-items: baseline;
-    padding: 4px 0;
+    padding: 6px 0;
     border-bottom: 1px solid var(--line);
+    font-size: 12px;
   }
-  .glyph { color: var(--brass); }
-  .actor { font-size: 10px; text-transform: uppercase; border: 1px solid var(--line-strong); padding: 0 5px; }
-  .actor.human { border-color: var(--rust); color: var(--rust); }
-  .actor.agent { border-color: var(--brass-dim); color: var(--brass); }
+  .history li.daysep {
+    border-bottom: none; padding: 10px 0 2px; color: var(--text-dim);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .history li.transition { padding: 3px 0; }
+  .glyph { color: var(--accent); }
+  .kind { min-width: 84px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .line { flex: 1; }
+  .transition .line { font-size: 11px; }
+  .actor { font-size: 10px; text-transform: uppercase; border: 1px solid var(--line-strong); padding: 0 5px; border-radius: 3px; }
+  .actor.human { border-color: var(--accent); color: var(--accent); }
 </style>

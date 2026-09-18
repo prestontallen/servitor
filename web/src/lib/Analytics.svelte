@@ -39,7 +39,7 @@
     if (!chart) return;
     const kinds = [...new Set(buckets.flatMap((b) => Object.keys(b.by_kind || {})))];
     const css = getComputedStyle(document.documentElement);
-    const palette = ['--brass', '--rust', '--auspex', '--amber', '--text-dim', '--red'].map(
+    const palette = ['--accent', '--accent-dim', '--ok', '--warn', '--text-dim', '--fail'].map(
       (v) => css.getPropertyValue(v).trim() || '#b08d57'
     );
     chart.setOption({
