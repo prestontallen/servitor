@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Build servitor from this checkout and redeploy it locally.
 #
-# Installs the binaries to ~/.local/bin, restarts the servitord systemd
-# user unit, and links the servitor skill into every detected agent skill
+# Installs the binaries to ~/.local/bin, installs deploy/servitord.service
+# into ~/.config/systemd/user (and restarts the servitord user unit), and links the servitor skill into every detected agent skill
 # directory (Hermes: ~/.hermes/skills, Claude: ~/.claude/skills), so skill
 # edits are live immediately and binary edits take effect after restart.
 #
-# Usage: ./install.sh [--check] [--tone]
-#   --check  report drift and exit 1 if the deployed state differs
-#   --tone   also link the optional servitor-tone skill (terse procedural
-#            reporting register) into every detected agent skill directory
+# Usage: ./install.sh [--check] [--tone|--no-tone]
+#   --check    report drift and exit 1 if the deployed state differs
+#   --tone     link the optional servitor-tone skill (terse procedural
+#              reporting register) into every detected agent skill directory
+#   --no-tone  skip the tone-skill prompt (non-interactive installs)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,12 +32,39 @@ skill_dirs() {
   done
 }
 
+unit_installed() {
+  # the deployed unit matches the one in deploy/
+  [ -f "${HOME}/.config/systemd/user/${UNIT}" ] \
+    && cmp -s "${REPO}/deploy/${UNIT}" "${HOME}/.config/systemd/user/${UNIT}"
+}
+
+install_unit() {
+  echo "==> installing ${UNIT} to ~/.config/systemd/user"
+  mkdir -p "${HOME}/.config/systemd/user"
+  cp "${REPO}/deploy/${UNIT}" "${HOME}/.config/systemd/user/${UNIT}"
+  systemctl --user daemon-reload
+  systemctl --user enable --quiet "${UNIT}" 2>/dev/null || true
+}
+
 WANT_TONE=0
 for arg in "$@"; do
   case "${arg}" in
     --tone) WANT_TONE=1 ;;
+    --no-tone) WANT_TONE=0; TONE_ASKED=1 ;;
+    --check) WANT_CHECK=1 ;;
   esac
 done
+
+# prompt for the optional tone skill unless the choice was made by flag
+# or we're not interactive (non-tty defaults to no)
+if [ "${WANT_TONE}" -eq 0 ] && [ "${TONE_ASKED:-0}" -eq 0 ] && [ -t 0 ]; then
+  printf "link the optional servitor-tone skill? [y/N] "
+  read -r answer
+  case "${answer}" in
+    [yY]|[yY][eE][sS]) WANT_TONE=1 ;;
+  esac
+fi
+TONE_ASKED=1
 
 tone_link_state() {
   # echo "linked" | "missing" | "absent" per agent skill root
@@ -105,6 +133,7 @@ check() {
       drift=1
     fi
   done
+  unit_installed || { echo "drift: ${HOME}/.config/systemd/user/${UNIT} differs from deploy/${UNIT}"; drift=1; }
   systemctl --user is-active --quiet "${UNIT}" \
     || { echo "drift: ${UNIT} is not running"; drift=1; }
   # tone skill is optional: informational, not drift
@@ -117,8 +146,12 @@ check() {
 
 mkdir -p "${BIN_DIR}"
 
-if [ "${1:-}" = "--check" ] && [ "${WANT_TONE}" -eq 0 ]; then
+if [ "${WANT_CHECK:-0}" -eq 1 ]; then
   check
+fi
+
+if ! unit_installed; then
+  install_unit
 fi
 
 build
