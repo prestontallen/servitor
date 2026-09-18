@@ -65,6 +65,15 @@ Local main never carries exclusive work: if main ever has commits that
 are not on origin/main, that is a defect in process — they belong in a
 branch and a PR. Get them onto one immediately.
 
+## Definition of done
+
+A ticket is DONE when its PR is MERGED and the changes are on main in
+the REMOTE repository (origin/main). An approved work summary, a pushed
+branch, or an open PR is not done. Contracts and acceptance criteria
+should state it exactly that way: "merged into main and on the remote
+repository." Only after the merge lands on origin/main: set the ticket
+done, release the worktree and branch, and log the merge.
+
 ## Exceptions
 
 - **Trivial hotfix with human approval**: still a branch + PR. There is
