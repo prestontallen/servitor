@@ -58,15 +58,23 @@ func (ss *StoreService) History(ctx context.Context, ref string, limit int) ([]s
 }
 
 func (ss *StoreService) Append(ctx context.Context, cmd WriteCmd) (AppendResult, error) {
-	if cmd.Ticket == "" || cmd.Kind == "" || cmd.Actor == "" {
+	if cmd.Kind == "" || cmd.Actor == "" {
 		return AppendResult{}, &APIError{Code: "invalid_event",
-			Message: "ticket, kind and actor are required"}
+			Message: "kind and actor are required"}
 	}
 	actorType := "agent"
 	if len(cmd.Actor) > 6 && cmd.Actor[:6] == "human:" {
 		actorType = "human"
 	} else if cmd.Actor == "system" {
 		actorType = "system"
+	}
+	// ticket.create generates its ULID server-side when not supplied
+	if cmd.Ticket == "" {
+		if cmd.Kind != "ticket.create" {
+			return AppendResult{}, &APIError{Code: "invalid_event",
+				Message: "ticket is required for this kind"}
+		}
+		cmd.Ticket = store.NewULID()
 	}
 	ticket, err := ss.resolve(ctx, cmd.Ticket)
 	if err != nil {
