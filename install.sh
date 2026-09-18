@@ -6,8 +6,10 @@
 # directory (Hermes: ~/.hermes/skills, Claude: ~/.claude/skills), so skill
 # edits are live immediately and binary edits take effect after restart.
 #
-# Usage: ./install.sh [--check]
+# Usage: ./install.sh [--check] [--tone]
 #   --check  report drift and exit 1 if the deployed state differs
+#   --tone   also link the optional servitor-tone skill (terse procedural
+#            reporting register) into every detected agent skill directory
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,6 +29,35 @@ skill_dirs() {
   for root in "${SKILL_TARGETS[@]}"; do
     [ -d "${root}" ] && echo "${root}/servitor"
   done
+}
+
+WANT_TONE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --tone) WANT_TONE=1 ;;
+  esac
+done
+
+tone_link_state() {
+  # echo "linked" | "missing" | "absent" per agent skill root
+  local dest
+  for dest in $(skill_dirs); do
+    if [ -L "${dest}/../servitor-tone/SKILL.md" ]; then
+      echo "linked"
+    else
+      echo "absent"
+    fi
+  done
+}
+
+link_tone() {
+  local dest found=0
+  for dest in $(skill_dirs); do
+    echo "==> linking servitor-tone skill into ${dest}"
+    ln -sfn "${REPO}/skills/servitor-tone" "${dest}/../servitor-tone"
+    found=1
+  done
+  [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
 }
 
 build() {
@@ -74,16 +105,22 @@ check() {
   done
   systemctl --user is-active --quiet "${UNIT}" \
     || { echo "drift: ${UNIT} is not running"; drift=1; }
+  # tone skill is optional: informational, not drift
+  local st
+  for st in $(tone_link_state); do
+    echo "servitor-tone: ${st} (optional; install.sh --tone to enable)"
+  done
   exit "${drift}"
 }
 
 mkdir -p "${BIN_DIR}"
 
-if [ "${1:-}" = "--check" ]; then
+if [ "${1:-}" = "--check" ] && [ "${WANT_TONE}" -eq 0 ]; then
   check
 fi
 
 build
 link_skills
+[ "${WANT_TONE}" -eq 1 ] && link_tone
 restart
 echo "done — binaries in ${BIN_DIR}, skills linked: $(skill_dirs | tr '\n' ' ')"
