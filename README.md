@@ -31,7 +31,8 @@ Agents interact only via the CLI or MCP — never the database, never the
 files. Core verbs:
 
 ```
-servitor ctx [ref]        ticket aggregate; always exits 0 (hook contract)
+servitor hook [ref]       SessionStart hook: preflight header + ctx; always exits 0
+servitor ctx [ref]        ticket aggregate, JSON only; always exits 0
 servitor board            queued/active/blocked, rank-ordered
 servitor arcs             arcs (tickets with members) with derived rollups
 servitor new --slug S     -> ticket ULID
