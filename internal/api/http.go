@@ -20,10 +20,56 @@ var staticFS embed.FS
 // only — swap the implementation and this file doesn't change.
 type HTTP struct {
 	Service Service
+	// Token, when set, requires non-local requests to present it as
+	// "Authorization: Bearer <token>". Localhost (CLI/hook/GUI on the host)
+	// is always allowed. Empty = no auth (dev only).
+	Token string
 }
 
 func NewHTTP(s Service) *HTTP { return &HTTP{Service: s} }
 
+func (h *HTTP) authed(next http.Handler) http.Handler {
+	if h.Token == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// static assets are open; only API routes are guarded
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if isLocal(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if token == "" {
+			token = r.URL.Query().Get("token") // browser GUI: ?token=
+		}
+		if token != h.Token {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{
+				"code": "unauthorized", "message": "missing or invalid bearer token"}})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLocal(r *http.Request) bool {
+	host := r.RemoteAddr
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.Trim(host, "[]")
+	return host == "127.0.0.1" || host == "::1"
+}
+
+// Routes returns the API routes wrapped in auth middleware. Static assets
+// are served unauthenticated (the shell is useless without data); API
+// routes require the token only for non-local requests when Token is set.
 func (h *HTTP) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", h.healthz)
@@ -34,7 +80,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/events/stream", h.stream)
 	mux.HandleFunc("GET /api/analytics", h.analytics)
 	mux.Handle("/", h.static())
-	return mux
+	return h.authed(mux)
 }
 
 // static serves the embedded GUI (single-page, no build step).

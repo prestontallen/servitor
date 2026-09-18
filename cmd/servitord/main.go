@@ -49,6 +49,11 @@ func main() {
 	}
 
 	svc := api.NewStoreService(s)
+	h := api.NewHTTP(svc)
+	if tok := os.Getenv("SERVITOR_TOKEN"); tok != "" {
+		h.Token = tok
+		log.Printf("auth enabled (bearer token)")
+	}
 	log.Printf("servitord listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, api.NewHTTP(svc).Routes()))
+	log.Fatal(http.ListenAndServe(addr, h.Routes()))
 }

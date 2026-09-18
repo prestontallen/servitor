@@ -4,8 +4,17 @@
 
 const $ = (sel) => document.querySelector(sel);
 const api = {
+  token: localStorage.getItem("servitor_token") || "",
+  auth(path) {
+    if (!this.token) return path;
+    return path + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(this.token);
+  },
   async get(path) {
-    const r = await fetch(path);
+    const r = await fetch(this.auth(path));
+    if (r.status === 401) {
+      const t = prompt("API token:");
+      if (t) { this.token = t; localStorage.setItem("servitor_token", t); return this.get(path); }
+    }
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     return r.json();
   },
