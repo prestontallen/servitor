@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -58,6 +59,75 @@ func (s *Store) TicketBySlug(ctx context.Context, slug string) (string, error) {
 		return "", fmt.Errorf("no live ticket owns slug %q", slug)
 	}
 	return id, err
+}
+
+// Card is one board row (W2).
+type Card struct {
+	ULID      string     `json:"ulid"`
+	Slug      string     `json:"slug"`
+	Title     string     `json:"title"`
+	Status    string     `json:"status"`
+	Rank      int64      `json:"rank"`
+	CardWord  *string    `json:"card_word"`
+	BlockedOn *string    `json:"blocked_on"`
+	BlockedAt *time.Time `json:"blocked_since"`
+}
+
+// Board returns queued/active/blocked cards in rank order.
+func (s *Store) Board(ctx context.Context) ([]Card, error) {
+	rows, err := s.Pool.Query(ctx, `
+SELECT ulid, slug, title, status::text, rank, card_word::text, blocked_on, blocked_since
+FROM tickets
+WHERE status IN ('queued','active','blocked')
+ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, rank`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cards []Card
+	for rows.Next() {
+		var c Card
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt); err != nil {
+			return nil, err
+		}
+		cards = append(cards, c)
+	}
+	return cards, rows.Err()
+}
+
+// History returns the full event timeline for one ticket (W3).
+type LedgerEvent struct {
+	ID        int64             `json:"id"`
+	ULID      string            `json:"ulid"`
+	Ticket    string            `json:"ticket_ulid"`
+	TS        time.Time         `json:"ts"`
+	Actor     string            `json:"actor"`
+	ActorType string            `json:"actor_type"`
+	Session   *string           `json:"session"`
+	Kind      string            `json:"kind"`
+	Payload   map[string]any    `json:"payload"`
+}
+
+func (s *Store) History(ctx context.Context, ticketULID string, limit int) ([]LedgerEvent, error) {
+	if limit <= 0 || limit > 10000 {
+		limit = 10000
+	}
+	rows, err := s.Pool.Query(ctx, `
+SELECT id, ulid, ticket_ulid, ts, actor, actor_type::text, session, kind, payload
+FROM ledger WHERE ticket_ulid=$1 ORDER BY id LIMIT $2`, ticketULID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var evs []LedgerEvent
+	for rows.Next() {
+		var e LedgerEvent
+		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Kind, &e.Payload); err != nil {
+			return nil, err
+		}
+		evs = append(evs, e)
+	}
+	return evs, rows.Err()
 }
 
 // CtxRead returns the whole ticket aggregate as one JSON document — the
