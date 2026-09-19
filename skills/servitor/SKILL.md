@@ -125,6 +125,22 @@ narrate:
 - never: restating tool output, progress chatter, or a re-read of state
   the ledger already holds
 
+**Structure over prose** — the GUI's ticket page builds its cards from
+structured events first and falls back to note conventions (`Intake:`,
+`DECISION:`, `CORRECTION:`, "open question"). Convention-derived cards are
+labelled as such; structured ones are the record. So when the contract is
+approved, log its criteria and plan as subitems, not as one prose note:
+
+```
+servitor add <ref> criterion "when X, then Y — verified by Z"
+servitor add <ref> plan "step 1: ..."
+servitor subitem <ref> <ulid-prefix> --state pass|fail     # at presentation
+servitor decide <ref> "<what>" --why "<why>"               # a real tradeoff
+```
+
+The intake note still carries tier, complexity and intent; the criteria
+carry the scorecard.
+
 **Feedback (friction capture)** — when friction happens in a session, log it
 in the moment, one line, as a feedback event on the ticket:
 
