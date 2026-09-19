@@ -1,6 +1,7 @@
 <script>
-  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOf, ageOfState, fmtTs } from './state.svelte.js';
+  import { arcs, board, openArc, openTicket, loadArcs, wordClass, relTs, ageOfState, fmtTs } from './state.svelte.js';
   import { live } from './live.svelte.js';
+  import { attention } from './inbox.js';
 
   let expanded = $state({});
 
@@ -12,23 +13,8 @@
 
   const ROLLUP_LABEL = { queued: 'queued', active: 'in motion', blocked: 'blocked', done: 'done' };
 
-  // attention: what needs the human — blocked-on-someone, presented
-  // (checking word) waiting on acceptance, stale actives. Derived from
-  // board data; no new endpoint needed.
-  const attention = $derived.by(() => {
-    const items = [];
-    for (const c of board.cards) {
-      if (c.status === 'blocked') {
-        items.push({ ulid: c.ulid, slug: c.slug, title: c.title || c.slug, why: `blocked on ${c.blocked_on}`, ts: c.blocked_since, sev: 'high' });
-      } else if (c.card_word === 'checking') {
-        items.push({ ulid: c.ulid, slug: c.slug, title: c.title || c.slug, why: 'presented — awaiting acceptance', ts: c.updated_at, sev: 'mid' });
-      } else if (c.status === 'active') {
-        const a = ageOf(c.updated_at);
-        if (a?.stale) items.push({ ulid: c.ulid, slug: c.slug, title: c.title || c.slug, why: `active but silent ${Math.floor(a.days)}d`, ts: c.updated_at, sev: 'mid' });
-      }
-    }
-    return items.sort((x, y) => new Date(x.ts) - new Date(y.ts));
-  });
+  // attention: what needs the human — the same rule the inbox uses
+  const attentionRows = $derived(attention(board.cards, live.events));
 
   function rel(ts) {
     if (!ts) return '—';
@@ -42,15 +28,15 @@
 
 <section class="wrap">
   <h2>Arcs</h2>
-  {#if attention.length}
+  {#if attentionRows.length}
     <div class="panel attention">
       <h3>needs you</h3>
       <ul>
-        {#each attention as it (it.ulid)}
+        {#each attentionRows as it (it.ulid)}
           <li class="sev-{it.sev}" onclick={() => openTicket(it.ulid)}>
             <span class="why">{it.why}</span>
             <span class="a-title">{it.title}</span>
-            <span class="muted since">{relTs(it.ts)}</span>
+            <span class="muted since">{relTs(it.since)}</span>
           </li>
         {/each}
       </ul>

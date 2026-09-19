@@ -4,11 +4,11 @@ import { get } from './api.svelte.js';
 import { seedLedger } from './live.svelte.js';
 
 // ---- routing ------------------------------------------------------------
-// Hash routes: #/arcs | #/board | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
+// Hash routes: #/inbox | #/arcs | #/board | #/journal | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
 // Refresh and iPad tab-switching restore the exact view.
 
 export const view = $state({
-  name: 'arcs', // arcs | board | timeline | ticket | analytics
+  name: 'arcs', // inbox | arcs | board | journal | timeline | ticket | analytics
   ticketRef: null,
   arcRef: null
 });
@@ -18,7 +18,7 @@ function parseHash() {
   const [name, ref] = h.split('/');
   if (name === 'ticket' && ref) return { name: 'ticket', ticketRef: decodeURIComponent(ref), arcRef: null };
   if (name === 'timeline' && ref) return { name: 'timeline', ticketRef: null, arcRef: decodeURIComponent(ref) };
-  if (['arcs', 'board', 'journal', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
+  if (['inbox', 'arcs', 'board', 'journal', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
   return null;
 }
 
@@ -26,7 +26,7 @@ function apply(p) {
   view.name = p.name;
   view.ticketRef = p.ticketRef;
   view.arcRef = p.arcRef;
-  if (p.name === 'board') loadBoard();
+  if (p.name === 'board' || p.name === 'inbox') loadBoard();
   if (p.name === 'arcs') loadArcs();
 }
 
@@ -43,8 +43,14 @@ export function openArc(ref) {
   location.hash = `#/timeline/${encodeURIComponent(ref)}`;
 }
 
+// No hash: a phone lands on the inbox (what is waiting on you), a wider
+// screen on arcs. Explicit hashes are honoured as they are.
+export function defaultView() {
+  return window.innerWidth < 700 ? 'inbox' : 'arcs';
+}
+
 export function routeFromLocation() {
-  apply(parseHash() || { name: 'arcs', ticketRef: null, arcRef: null });
+  apply(parseHash() || { name: defaultView(), ticketRef: null, arcRef: null });
 }
 
 export function onRouteChange() {

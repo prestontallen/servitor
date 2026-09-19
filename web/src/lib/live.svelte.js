@@ -73,7 +73,7 @@ export function merge(incoming) {
 // Seed the stream from the board: each ticket's recent history.
 export async function seedLedger(cards) {
   const results = await Promise.allSettled(
-    cards.map((c) => get(`/api/ticket/${c.ulid}/history?limit=30`))
+    cards.map((c) => get(`/api/ticket/${c.ulid}/history?limit=100`))
   );
   merge(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
 }
