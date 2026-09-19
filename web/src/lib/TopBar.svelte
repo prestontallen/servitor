@@ -10,7 +10,6 @@
 <header>
   <h1 class="brand" onclick={() => show('arcs')}>servitor</h1>
   <nav>
-    <button class:active={view.name === 'inbox'} onclick={() => show('inbox')}>Inbox</button>
     <button class:active={view.name === 'arcs' || view.name === 'timeline'} onclick={() => show('arcs')}>Arcs</button>
     <button class:active={view.name === 'board'} onclick={() => show('board')}>Board</button>
     <button class:active={view.name === 'journal'} onclick={() => show('journal')}>Journal</button>

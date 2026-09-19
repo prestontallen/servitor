@@ -1,6 +1,5 @@
 <script>
   import TopBar from './lib/TopBar.svelte';
-  import Inbox from './lib/Inbox.svelte';
   import Arcs from './lib/Arcs.svelte';
   import Timeline from './lib/Timeline.svelte';
   import Board from './lib/Board.svelte';
@@ -25,7 +24,6 @@
 <TopBar />
 <div class="shell">
   <main>
-    {#if view.name === 'inbox'}<Inbox />{/if}
     {#if view.name === 'arcs'}<Arcs />{/if}
     {#if view.name === 'timeline'}<Timeline />{/if}
     {#if view.name === 'board'}<Board />{/if}

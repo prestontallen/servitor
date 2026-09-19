@@ -1,7 +1,8 @@
 // What is waiting on the human, and the per-card activity sparkline.
 // Pure functions over the board payload and the seeded ledger stream
-// (live.events), so `node --test` covers them and the inbox and the arcs
-// "needs you" panel cannot disagree: both call attention().
+// (live.events), so `node --test` covers them and the board's amber
+// edges and the arcs "needs you" panel cannot disagree: both call
+// attention().
 
 const DAY = 86400000;
 const STALE_DAYS = 3;
@@ -34,29 +35,24 @@ export function attention(cards, events = [], now = Date.now()) {
     const f = facts(events, c.ulid);
     if (c.status === 'blocked') {
       if (!HUMAN_ON.test(c.blocked_on || '')) continue;
-      rows.push({ ulid: c.ulid, slug: c.slug, title, rule: 'blocked', sev: 'high',
-        why: `blocked on ${c.blocked_on}`, since: c.blocked_since || c.updated_at,
-        action: `servitor set ${c.slug} --status queued`, hint: 'unblock, or drop' });
+      rows.push({ ulid: c.ulid, title, rule: 'blocked', sev: 'high',
+        why: `blocked on ${c.blocked_on}`, since: c.blocked_since || c.updated_at });
       continue;
     }
     if (c.status !== 'active') continue;
     if (c.card_word === 'checking') {
-      rows.push({ ulid: c.ulid, slug: c.slug, title, rule: 'presented', sev: 'mid',
+      rows.push({ ulid: c.ulid, title, rule: 'presented', sev: 'mid',
         why: f.pr ? `presented · ${f.pr.replace(/^https?:\/\/github\.com\//, '')} open` : 'presented · awaiting acceptance',
-        since: f.gates.presented || c.updated_at,
-        action: `servitor set ${c.slug} --status done`, hint: f.pr ? 'review and merge, then accept' : 'accept' });
+        since: f.gates.presented || c.updated_at });
     } else if (c.card_word === 'shipping') {
-      rows.push({ ulid: c.ulid, slug: c.slug, title, rule: 'shipped', sev: 'mid',
-        why: 'shipped, still active', since: f.gates.shipped || c.updated_at,
-        action: `servitor set ${c.slug} --status done`, hint: 'accept' });
+      rows.push({ ulid: c.ulid, title, rule: 'shipped', sev: 'mid',
+        why: 'shipped, still active', since: f.gates.shipped || c.updated_at });
     } else if ((!c.card_word || c.card_word === 'shaping') && f.contractNote) {
-      rows.push({ ulid: c.ulid, slug: c.slug, title, rule: 'contract', sev: 'mid',
-        why: 'contract drafted · awaiting your approval', since: f.contractNote,
-        action: `SERVITOR_ACTOR=human:preston servitor gate ${c.slug} contract_approved`, hint: 'read the contract on the ticket page' });
+      rows.push({ ulid: c.ulid, title, rule: 'contract', sev: 'mid',
+        why: 'contract drafted · awaiting your approval', since: f.contractNote });
     } else if (now - t(c.updated_at) >= STALE_DAYS * DAY) {
-      rows.push({ ulid: c.ulid, slug: c.slug, title, rule: 'stale', sev: 'mid',
-        why: `active but silent ${Math.floor((now - t(c.updated_at)) / DAY)}d`, since: c.updated_at,
-        action: `servitor ctx ${c.slug}`, hint: 'check in' });
+      rows.push({ ulid: c.ulid, title, rule: 'stale', sev: 'mid',
+        why: `active but silent ${Math.floor((now - t(c.updated_at)) / DAY)}d`, since: c.updated_at });
     }
   }
   return rows.sort((a, b) => t(a.since) - t(b.since));
@@ -76,7 +72,7 @@ export function sparkline(events, ulid, now = Date.now(), days = 7) {
     counts[i]++;
     if (e.actor_type === 'human') human[i] = true;
   }
-  return { counts, human, total: counts.reduce((a, b) => a + b, 0) };
+  return { counts, human };
 }
 
 // Which lane a board card belongs in. Blocked cards go to the rail;

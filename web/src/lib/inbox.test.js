@@ -8,7 +8,7 @@ let id = 0;
 const ev = (ticket, kind, payload, extra = {}) => ({ id: ++id, ticket, kind, payload, ts: ago(1), actor: 'agent:cli', actor_type: 'agent', ...extra });
 const card = (o) => ({ ulid: o.slug + '-ulid', title: '', blocked_on: null, blocked_since: null, card_word: null, active_by: null, updated_at: ago(1), ...o });
 
-test('each rule fires on the right card and carries the CLI action', () => {
+test('each rule fires on the right card, oldest wait first', () => {
   const cards = [
     card({ slug: 'b', status: 'blocked', blocked_on: 'human', blocked_since: ago(120) }),
     card({ slug: 'b2', status: 'blocked', blocked_on: 'adirondack', blocked_since: ago(200) }),
@@ -25,11 +25,11 @@ test('each rule fires on the right card and carries the CLI action', () => {
   ];
   const rows = attention(cards, events, NOW);
   assert.deepEqual(rows.map((r) => r.rule), ['blocked', 'presented', 'contract', 'shipped'], 'oldest wait first; other-party block, queued and building excluded');
-  assert.equal(rows[0].action, 'servitor set b --status queued');
+  assert.equal(rows[0].why, 'blocked on human');
   assert.equal(rows[1].why, 'presented · x/y/pull/7 open');
   assert.equal(rows[1].since, ago(10), 'presented wait starts at the gate, not the last event');
-  assert.equal(rows[2].action, 'SERVITOR_ACTOR=human:preston servitor gate c contract_approved');
-  assert.equal(rows[3].action, 'servitor set s --status done');
+  assert.equal(rows[2].why, 'contract drafted · awaiting your approval');
+  assert.equal(rows[3].why, 'shipped, still active');
 });
 
 test('a silent active ticket is stale after three days; the rules degrade to the board alone', () => {
@@ -51,8 +51,7 @@ test('sparkline buckets seven days oldest first and marks human days; no events 
   const s = sparkline(events, 't', NOW);
   assert.deepEqual(s.counts, [0, 0, 0, 0, 0, 1, 2]);
   assert.deepEqual(s.human, [false, false, false, false, false, false, true]);
-  assert.equal(s.total, 3);
-  assert.equal(sparkline(events, 'nobody', NOW).total, 0);
+  assert.deepEqual(sparkline(events, 'nobody', NOW).counts, [0, 0, 0, 0, 0, 0, 0]);
 });
 
 test('lane placement: blocked to the rail, queued left, active by card word, no word means shaping', () => {
