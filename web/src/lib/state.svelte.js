@@ -4,11 +4,11 @@ import { get } from './api.svelte.js';
 import { seedLedger } from './live.svelte.js';
 
 // ---- routing ------------------------------------------------------------
-// Hash routes: #/arcs | #/board | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
+// Hash routes: #/arcs | #/board | #/journal | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
 // Refresh and iPad tab-switching restore the exact view.
 
 export const view = $state({
-  name: 'arcs', // arcs | board | timeline | ticket | analytics
+  name: 'arcs', // arcs | board | journal | timeline | ticket | analytics
   ticketRef: null,
   arcRef: null
 });
@@ -43,8 +43,15 @@ export function openArc(ref) {
   location.hash = `#/timeline/${encodeURIComponent(ref)}`;
 }
 
+// No hash: a phone lands on the board (lanes + blocked rail), a wider
+// screen on arcs. Explicit hashes are honoured as they are; a stale
+// #/inbox bookmark falls through to the default.
+export function defaultView() {
+  return window.innerWidth < 700 ? 'board' : 'arcs';
+}
+
 export function routeFromLocation() {
-  apply(parseHash() || { name: 'arcs', ticketRef: null, arcRef: null });
+  apply(parseHash() || { name: defaultView(), ticketRef: null, arcRef: null });
 }
 
 export function onRouteChange() {
