@@ -124,7 +124,6 @@ func (h *HTTP) feedback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.Source = r.URL.Query().Get("source")
-	f.Tag = r.URL.Query().Get("tag")
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil {
 			f.Limit = n

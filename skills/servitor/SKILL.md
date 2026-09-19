@@ -56,7 +56,7 @@ servitor set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
 servitor log <ref> <kind> [text]                 e.g. note; or any ledger kind
 servitor gate <ref> <contract_approved|presented|shipped>
 servitor history <ref>                 full event timeline
-servitor feedback [--since DATE] [--source human|self] [--tag TAG] [--limit N]
+servitor feedback [--since DATE] [--source human|self] [--limit N]
                                        feedback events across all tickets
 ```
 
@@ -141,25 +141,25 @@ servitor decide <ref> "<what>" --why "<why>"               # a real tradeoff
 The intake note still carries tier, complexity and intent; the criteria
 carry the scorecard.
 
-**Feedback (friction capture)** — when friction happens in a session, log it
-in the moment, one line, as a feedback event on the ticket:
+**Feedback (friction capture)** — when the human corrects or redirects you,
+or you catch your own miss, log it in the moment, one line, as a feedback
+event on the ticket:
 
 ```
-servitor log <ref> feedback '{"source":"self|human","tag":"correction|rework|stall|drift","finding":"one line"}'
+servitor log <ref> feedback '{"source":"human|self","finding":"one line"}'
 ```
 
-- `finding` is REQUIRED (the store rejects feedback without it); `source`
-  defaults to `self`. `source: human` — the human corrected or redirected
-  the agent; `self` — the agent caught its own miss (stall, wrong
-  assumption, rework). `tag` is a free extra field for slicing.
-- tags so far: `correction` (user re-steered mid-turn). Add a tag when one
-  is first used, not before.
+- `finding` is REQUIRED (the store rejects feedback without it). `source:
+  human` — the human corrected or redirected the agent; `self` — the agent
+  caught its own miss. Extra payload fields (e.g. `tag`) are optional; add
+  one only when a slice you actually use needs it — don't invent taxonomies
+  ahead of use.
 - Review what's already in the repo/code BEFORE proposing — the most common
   correction is proposing something that already exists. Checking first is
   cheaper than a correction event.
-- Feedback loop: query `servitor feedback --tag TAG`; when the same tag or
-  pattern recurs across sessions, propose a SKILL EDIT (not a memory) that
-  prevents it. The fix lands in the skill the next session will load.
+- The event is the receipt, not the fix. When the same correction happens a
+  SECOND time, edit the skill in that session — the fix is the skill edit
+  the next session loads, not a retrospective query of the feedback log.
 
 **Hard checkpoints** — every tier, never scaled away, prior approval never
 carries over:

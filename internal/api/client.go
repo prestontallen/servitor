@@ -169,9 +169,6 @@ func (c *HTTPClient) Feedback(ctx context.Context, f FeedbackFilter) ([]store.Le
 	if f.Source != "" {
 		q += "source=" + f.Source + "&"
 	}
-	if f.Tag != "" {
-		q += "tag=" + f.Tag + "&"
-	}
 	q += fmt.Sprintf("limit=%d", f.Limit)
 	var evs []store.LedgerEvent
 	if err := c.do(ctx, http.MethodGet, q, nil, &evs); err != nil {
