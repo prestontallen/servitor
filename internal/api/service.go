@@ -118,6 +118,9 @@ type Service interface {
 	Subscribe(ctx context.Context) (Subscription, error)
 	// Analytics returns per-day ledger activity (time-series read).
 	Analytics(ctx context.Context, days int) ([]DayBucket, error)
+	// Timeline returns phase segments per ticket and hourly actor
+	// buckets for a window (the read Flow, Day and Cadence share).
+	Timeline(ctx context.Context, q TimelineQuery) (Timeline, error)
 	// Handoffs returns per-ticket human/agent handoff latency.
 	Handoffs(ctx context.Context) ([]store.HandoffRow, error)
 	// Ping reports reachability (hook degrade path: never blocks a session).

@@ -235,6 +235,25 @@ func (c *HTTPClient) Analytics(ctx context.Context, days int) ([]DayBucket, erro
 	return out, nil
 }
 
+// Timeline fetches /api/timeline. days rides along unless since is
+// set (until derives from days when only it is given).
+func (c *HTTPClient) Timeline(ctx context.Context, q TimelineQuery) (Timeline, error) {
+	v := url.Values{}
+	if q.Since != nil {
+		v.Set("since", q.Since.Format(time.RFC3339))
+	} else {
+		v.Set("days", strconv.Itoa(q.Days))
+	}
+	if q.Until != nil {
+		v.Set("until", q.Until.Format(time.RFC3339))
+	}
+	var out Timeline
+	if err := c.do(ctx, http.MethodGet, "/api/timeline?"+v.Encode(), nil, &out); err != nil {
+		return Timeline{}, err
+	}
+	return out, nil
+}
+
 func (c *HTTPClient) Handoffs(ctx context.Context) ([]store.HandoffRow, error) {
 	var out []store.HandoffRow
 	if err := c.do(ctx, http.MethodGet, "/api/analytics/handoffs", nil, &out); err != nil {

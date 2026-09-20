@@ -87,6 +87,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/feedback", h.feedback)
 	mux.HandleFunc("GET /api/analytics", h.analytics)
 	mux.HandleFunc("GET /api/analytics/handoffs", h.handoffs)
+	mux.HandleFunc("GET /api/timeline", h.timeline)
 	mux.Handle("/", h.static())
 	return h.authed(mux)
 }
@@ -152,6 +153,50 @@ func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(buckets)
+}
+
+// timeline: /api/timeline?days=N or ?since=&until= (RFC3339 or a bare
+// date). Bad timestamps and bad days are a 422, never silently ignored.
+func (h *HTTP) timeline(w http.ResponseWriter, r *http.Request) {
+	q := TimelineQuery{Days: 30}
+	if d := r.URL.Query().Get("days"); d != "" {
+		n, err := strconv.Atoi(d)
+		if err != nil || n <= 0 {
+			writeErr(w, &APIError{Code: "invalid_payload", Message: "days must be a positive integer"})
+			return
+		}
+		q.Days = n
+	}
+	for name, dst := range map[string]**time.Time{"since": &q.Since, "until": &q.Until} {
+		t, err := parseWhen(r, name)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		*dst = t
+	}
+	tl, err := h.Service.Timeline(r.Context(), q)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tl)
+}
+
+// parseWhen reads one timestamp param (RFC3339 or a bare date). Absent
+// is nil; present-but-unparsable is a 422.
+func parseWhen(r *http.Request, name string) (*time.Time, error) {
+	s := r.URL.Query().Get(name)
+	if s == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, &APIError{Code: "invalid_payload", Message: name + " must be RFC3339 or YYYY-MM-DD"}
 }
 
 // handoffs serves per-ticket human/agent round-trip latency.
