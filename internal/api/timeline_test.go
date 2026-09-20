@@ -10,7 +10,7 @@ import (
 	"github.com/prestontallen/servitor/internal/store"
 )
 
-func tlEvents(t *testing.T, s Service, ulid, slug string) {
+func tlEvents(t *testing.T, s Service, ulid, slug string) time.Time {
 	t.Helper()
 	ctx := context.Background()
 	steps := []WriteCmd{
@@ -21,11 +21,17 @@ func tlEvents(t *testing.T, s Service, ulid, slug string) {
 		{Ticket: ulid, Kind: "status.set", Actor: "agent:test", Payload: map[string]any{"status": "active"}},
 		{Ticket: ulid, Kind: "gate", Actor: "agent:test", Payload: map[string]any{"gate": "presented"}},
 	}
-	for _, c := range steps {
+	var mid time.Time // between the active step and the first gate
+	for i, c := range steps {
 		if _, err := s.Append(ctx, c); err != nil {
 			t.Fatalf("%s: %v", c.Kind, err)
 		}
+		if i == 1 {
+			mid = time.Now()
+			time.Sleep(30 * time.Millisecond) // give the next event a later ts
+		}
 	}
+	return mid
 }
 
 func phases(tl Timeline, ulid string) []string {
@@ -43,7 +49,6 @@ func TestTimelineSegmentReplay(t *testing.T) {
 	ctx := context.Background()
 	id := store.NewULID()
 	tlEvents(t, s, id, "timeline-replay")
-
 	tl, err := s.Timeline(ctx, TimelineQuery{Days: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +75,7 @@ func TestTimelineWindowClipping(t *testing.T) {
 	s := svc(t)
 	ctx := context.Background()
 	id := store.NewULID()
-	tlEvents(t, s, id, "timeline-clip")
+	mid := tlEvents(t, s, id, "timeline-clip")
 
 	// a window entirely in the past holds nothing of this ticket
 	pastSince := time.Now().Add(-48 * time.Hour)
@@ -83,22 +88,61 @@ func TestTimelineWindowClipping(t *testing.T) {
 		t.Errorf("past window returned %d segments, want 0", n)
 	}
 
-	// a window starting mid-life clips segment starts to its since edge
-	since := time.Now().Add(-2 * time.Hour)
-	tl, err = s.Timeline(ctx, TimelineQuery{Since: &since})
+	// since lands mid-life, after the activation and before the first
+	// gate: the shaping segment straddles it and must clip to the edge
+	tl, err = s.Timeline(ctx, TimelineQuery{Since: &mid})
 	if err != nil {
 		t.Fatal(err)
 	}
+	var mine []Segment
 	for _, seg := range tl.Segments {
-		if seg.Ticket != id {
-			continue
+		if seg.Ticket == id {
+			mine = append(mine, seg)
 		}
-		if seg.From.Before(since) {
+	}
+	if len(mine) == 0 {
+		t.Fatal("current window lost the ticket's segments")
+	}
+	if !mine[0].From.Equal(mid) || mine[0].Phase != "shaping" {
+		t.Errorf("first segment %+v, want from==since, phase shaping (the clip branch)", mine[0])
+	}
+	for _, seg := range mine {
+		if seg.From.Before(mid) {
 			t.Errorf("segment starts before the window: %+v", seg)
 		}
 	}
-	if got := phases(tl, id); len(got) == 0 {
-		t.Error("current window lost the ticket's segments")
+}
+
+func TestTimelineGateWhileQueued(t *testing.T) {
+	s := svc(t)
+	ctx := context.Background()
+	id := store.NewULID()
+	steps := []WriteCmd{
+		{Ticket: id, Kind: "ticket.create", Actor: "agent:test", Payload: map[string]any{"slug": "timeline-queued-gate", "title": "Q"}},
+		{Ticket: id, Kind: "gate", Actor: "human:preston", Payload: map[string]any{"gate": "contract_approved"}},
+		{Ticket: id, Kind: "status.set", Actor: "agent:test", Payload: map[string]any{"status": "active"}},
+	}
+	for _, c := range steps {
+		if _, err := s.Append(ctx, c); err != nil {
+			t.Fatalf("%s: %v", c.Kind, err)
+		}
+	}
+	tl, err := s.Timeline(ctx, TimelineQuery{Days: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the board keeps a queued card in the queued lane regardless of
+	// card_word; the segments must agree and not draw two hours of
+	// building before the ticket was ever active
+	got := phases(tl, id)
+	want := []string{"queued", "building"}
+	if len(got) != len(want) {
+		t.Fatalf("phases=%v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("phases=%v want %v", got, want)
+		}
 	}
 }
 
@@ -137,5 +181,20 @@ func TestTimelineEndpoint(t *testing.T) {
 	NewHTTP(s).Routes().ServeHTTP(rr, httptest.NewRequest("GET", "/api/timeline?until=2026-01-01&since=2026-02-01", nil))
 	if rr.Code != 422 {
 		t.Errorf("until<=since: status %d, want 422", rr.Code)
+	}
+	// until alone derives since from until — a past until is a valid
+	// short window, not since>until
+	rr = httptest.NewRecorder()
+	NewHTTP(s).Routes().ServeHTTP(rr, httptest.NewRequest("GET", "/api/timeline?until=2020-01-01", nil))
+	if rr.Code != 200 {
+		t.Errorf("until alone: status %d, want 200", rr.Code)
+	}
+	// non-integer and non-positive days are 422, matching the contract
+	for _, bad := range []string{"days=abc", "days=0", "days=-5"} {
+		rr = httptest.NewRecorder()
+		NewHTTP(s).Routes().ServeHTTP(rr, httptest.NewRequest("GET", "/api/timeline?"+bad, nil))
+		if rr.Code != 422 {
+			t.Errorf("%s: status %d, want 422", bad, rr.Code)
+		}
 	}
 }

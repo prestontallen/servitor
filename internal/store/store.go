@@ -61,6 +61,17 @@ func IsULID(s string) bool {
 	return err == nil
 }
 
+// CardWord maps a gate to the card word it confers — the one copy of
+// the mapping. The write path (gate handling) and /api/timeline's
+// phase replay both call this, so they cannot drift.
+func CardWord(gate string) string {
+	return map[string]string{
+		"contract_approved": "building",
+		"presented":         "checking",
+		"shipped":           "shipping",
+	}[gate]
+}
+
 type Store struct {
 	Pool *pgxpool.Pool
 }
@@ -431,12 +442,11 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			 VALUES ($1,$2,$3,$4,$5,$6)`, e.TicketULID, g, e.Actor, e.ActorType, ts, eventID); err != nil {
 			return err
 		}
-		card := map[string]string{"contract_approved": "building", "presented": "checking", "shipped": "shipping"}[g]
+		card := CardWord(g)
 		_, err := tx.Exec(ctx,
 			`UPDATE tickets SET card_word=$1, last_gate_ts=$2 WHERE ulid=$3`,
 			card, ts, e.TicketULID)
 		return err
-
 	case "subitem.add":
 		kind, _ := p["kind"].(string)
 		body, _ := p["body"].(string)

@@ -235,24 +235,20 @@ func (c *HTTPClient) Analytics(ctx context.Context, days int) ([]DayBucket, erro
 	return out, nil
 }
 
-// Timeline fetches /api/timeline. The query renders as days=N when only
-// the shorthand is set, since/until (RFC3339) otherwise.
+// Timeline fetches /api/timeline. days rides along unless since is
+// set (until derives from days when only it is given).
 func (c *HTTPClient) Timeline(ctx context.Context, q TimelineQuery) (Timeline, error) {
-	qs := fmt.Sprintf("days=%d", q.Days)
-	if q.Since != nil || q.Until != nil {
-		qs = ""
-		if q.Since != nil {
-			qs = "since=" + url.QueryEscape(q.Since.Format(time.RFC3339))
-		}
-		if q.Until != nil {
-			if qs != "" {
-				qs += "&"
-			}
-			qs += "until=" + url.QueryEscape(q.Until.Format(time.RFC3339))
-		}
+	v := url.Values{}
+	if q.Since != nil {
+		v.Set("since", q.Since.Format(time.RFC3339))
+	} else {
+		v.Set("days", strconv.Itoa(q.Days))
+	}
+	if q.Until != nil {
+		v.Set("until", q.Until.Format(time.RFC3339))
 	}
 	var out Timeline
-	if err := c.do(ctx, http.MethodGet, "/api/timeline?"+qs, nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/timeline?"+v.Encode(), nil, &out); err != nil {
 		return Timeline{}, err
 	}
 	return out, nil

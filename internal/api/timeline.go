@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"time"
+
+	"github.com/prestontallen/servitor/internal/store"
 )
 
 // TimelineQuery selects the window. Days is the shorthand (default 30,
@@ -44,11 +46,15 @@ type Timeline struct {
 	Buckets  []HourBucket `json:"buckets"`
 }
 
-// gateWord mirrors the store's gate -> card-word mapping exactly.
-var gateWord = map[string]string{
-	"contract_approved": "building",
-	"presented":         "checking",
-	"shipped":           "shipping",
+// gateWord removed: the gate -> card-word mapping lives in one place,
+// store.CardWord, shared with the write path.
+
+// activePhase is the set of phases a gate word may overwrite: the card
+// words of an in-flight ticket. Queued stays queued and blocked stays
+// blocked when a gate lands — matching the board, where laneOf keeps
+// both in their lane regardless of card_word.
+var activePhase = map[string]bool{
+	"shaping": true, "building": true, "checking": true, "shipping": true,
 }
 
 // Timeline derives the phase segments and hourly actor buckets for the
@@ -58,6 +64,9 @@ var gateWord = map[string]string{
 // even when the transition happened long before the window.
 func (ss *StoreService) Timeline(ctx context.Context, q TimelineQuery) (Timeline, error) {
 	until := time.Now()
+	if q.Until != nil {
+		until = *q.Until
+	}
 	days := q.Days
 	if days <= 0 {
 		days = 30
@@ -65,12 +74,11 @@ func (ss *StoreService) Timeline(ctx context.Context, q TimelineQuery) (Timeline
 	if days > 365 {
 		days = 365
 	}
+	// The shorthand derives from the resolved until, so ?until=past with
+	// no since is a valid short window, not since>until.
 	since := until.AddDate(0, 0, -days)
 	if q.Since != nil {
 		since = *q.Since
-	}
-	if q.Until != nil {
-		until = *q.Until
 	}
 	if !until.After(since) {
 		return Timeline{}, &APIError{Code: "invalid_payload", Message: "until must be after since"}
@@ -146,10 +154,10 @@ ORDER BY l.ticket_ulid, l.id`)
 				next = ""
 			}
 		case "gate":
-			if w := gateWord[gate]; w != "" {
+			if w := store.CardWord(gate); w != "" {
 				st.word = w
-				if st.open && st.phase != "" && st.phase != "blocked" {
-					next = w // blocked keeps its phase; the word survives it
+				if st.open && activePhase[st.phase] {
+					next = w // queued stays queued; blocked keeps its phase
 				}
 			}
 		}
@@ -166,7 +174,13 @@ ORDER BY l.ticket_ulid, l.id`)
 		return Timeline{}, wrapUnreachable(err)
 	}
 	for ulid, st := range cur {
-		closeSeg(st, ulid, until)
+		// An open segment never closes in the future: the closing edge
+		// is min(until, now), so ?until=December does not stretch bars.
+		end := until
+		if now := time.Now(); now.Before(end) {
+			end = now
+		}
+		closeSeg(st, ulid, end)
 	}
 
 	brows, err := ss.Store.Pool.Query(ctx, `
@@ -178,8 +192,7 @@ GROUP BY 1, 2 ORDER BY 1`, since, until)
 	}
 	defer brows.Close()
 
-	byHour := map[time.Time]HourBucket{}
-	var order []time.Time
+	out.Buckets = []HourBucket{}
 	for brows.Next() {
 		var hour time.Time
 		var actor string
@@ -187,20 +200,14 @@ GROUP BY 1, 2 ORDER BY 1`, since, until)
 		if err := brows.Scan(&hour, &actor, &n); err != nil {
 			return Timeline{}, wrapUnreachable(err)
 		}
-		h := hour.Truncate(time.Second)
-		b, seen := byHour[h]
-		if !seen {
-			b = HourBucket{Hour: h, ByActor: map[string]int64{}}
-			byHour[h] = b
-			order = append(order, h)
+		// rows arrive ORDER BY hour; a new bucket only when the hour moves
+		if len(out.Buckets) == 0 || !out.Buckets[len(out.Buckets)-1].Hour.Equal(hour) {
+			out.Buckets = append(out.Buckets, HourBucket{Hour: hour, ByActor: map[string]int64{}})
 		}
-		b.ByActor[actor] = n
+		out.Buckets[len(out.Buckets)-1].ByActor[actor] += n
 	}
 	if err := brows.Err(); err != nil {
 		return Timeline{}, wrapUnreachable(err)
-	}
-	for _, h := range order {
-		out.Buckets = append(out.Buckets, byHour[h])
 	}
 	return out, nil
 }
