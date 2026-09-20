@@ -3,6 +3,7 @@
   import Arcs from './lib/Arcs.svelte';
   import Timeline from './lib/Timeline.svelte';
   import Board from './lib/Board.svelte';
+  import Time from './lib/Time.svelte';
   import Ticket from './lib/Ticket.svelte';
   import Journal from './lib/Journal.svelte';
   import Analytics from './lib/Analytics.svelte';
@@ -27,6 +28,7 @@
     {#if view.name === 'arcs'}<Arcs />{/if}
     {#if view.name === 'timeline'}<Timeline />{/if}
     {#if view.name === 'board'}<Board />{/if}
+    {#if view.name === 'time'}<Time />{/if}
     {#if view.name === 'journal'}<Journal />{/if}
     {#if view.name === 'ticket'}<Ticket />{/if}
     {#if view.name === 'analytics'}<Analytics />{/if}

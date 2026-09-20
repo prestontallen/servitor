@@ -4,21 +4,21 @@ import { get } from './api.svelte.js';
 import { seedLedger } from './live.svelte.js';
 
 // ---- routing ------------------------------------------------------------
-// Hash routes: #/arcs | #/board | #/journal | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
+// Hash routes: #/arcs | #/board | #/time | #/journal | #/analytics | #/ticket/<ref> | #/timeline/<arcRef>
 // Refresh and iPad tab-switching restore the exact view.
 
 export const view = $state({
-  name: 'arcs', // arcs | board | journal | timeline | ticket | analytics
+  name: 'arcs', // arcs | board | time | journal | timeline | ticket | analytics
   ticketRef: null,
   arcRef: null
 });
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
-  const [name, ref] = h.split('/');
+  const [name, ref] = h.split('?')[0].split('/');
   if (name === 'ticket' && ref) return { name: 'ticket', ticketRef: decodeURIComponent(ref), arcRef: null };
   if (name === 'timeline' && ref) return { name: 'timeline', ticketRef: null, arcRef: decodeURIComponent(ref) };
-  if (['arcs', 'board', 'journal', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
+  if (['arcs', 'board', 'time', 'journal', 'analytics'].includes(name)) return { name, ticketRef: null, arcRef: null };
   return null;
 }
 

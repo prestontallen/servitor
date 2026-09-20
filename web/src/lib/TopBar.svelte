@@ -12,6 +12,7 @@
   <nav>
     <button class:active={view.name === 'arcs' || view.name === 'timeline'} onclick={() => show('arcs')}>Arcs</button>
     <button class:active={view.name === 'board'} onclick={() => show('board')}>Board</button>
+    <button class:active={view.name === 'time'} onclick={() => show('time')}>Time</button>
     <button class:active={view.name === 'journal'} onclick={() => show('journal')}>Journal</button>
     <button class:active={view.name === 'analytics'} onclick={() => show('analytics')}>Activity</button>
   </nav>
