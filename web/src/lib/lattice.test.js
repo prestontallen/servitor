@@ -27,14 +27,19 @@ test('quantum grows so the tallest side fits maxRows', () => {
   assert.equal(quantumFor(bucketize([ev(1, 'note')], T0, T0 + 10 * H, 5), 10), 1);
 });
 
-test('stack orders kinds baseline outward and rounds partial quanta up', () => {
+test('stack orders kinds baseline outward and rounds over the side, not per kind', () => {
   const b = bucketize([ev(1, 'note'), ev(1, 'note'), ev(1, 'note'), ev(1, 'decision'), ev(1, 'feedback', 'human')], T0, T0 + 10 * H, 5);
+  // 4 agent events at quantum 2 -> 2 dots, not 3: the decision fills half a dot and note completes it
   const agent = stack(b[0], 'agent', 2);
-  assert.deepEqual(agent.map((d) => d.kind), ['decision', 'note', 'note']);
-  assert.ok(agent.every((d) => !d.human));
-  const human = stack(b[0], 'human', 2);
-  assert.deepEqual(human, [{ kind: 'feedback', human: true }]);
+  assert.deepEqual(agent.map((d) => d.kind), ['decision', 'note']);
+  assert.deepEqual(stack(b[0], 'human', 2), [{ kind: 'feedback' }]);
   assert.deepEqual(KIND_ORDER, ['decision', 'feedback', 'note']);
+});
+
+test('a side draws exactly ceil(total / quantum) dots whatever the kind mix', () => {
+  const mix = [ev(1, 'decision'), ev(1, 'feedback'), ev(1, 'note'), ev(1, 'note'), ev(1, 'note'), ev(1, 'note'), ev(1, 'note')];
+  const b = bucketize(mix, T0, T0 + 10 * H, 5);
+  assert.equal(stack(b[0], 'agent', 3).length, Math.ceil(7 / 3));
 });
 
 test('rowsFor reports the tallest column per side', () => {

@@ -34,13 +34,18 @@ export function quantumFor(buckets, maxRows) {
   return Math.max(1, Math.ceil(peak / maxRows));
 }
 
-// the dots for one side of one column, baseline outward: [{kind, human}]
+// the dots for one side of one column, baseline outward: [{kind}].
+// Rounding runs over the side's cumulative count, not per kind, so the
+// side always draws ceil(total / quantum) dots and the legend stays true.
 export function stack(bucket, who, quantum) {
   const dots = [];
+  let cum = 0;
   for (const k of KIND_ORDER) {
     const c = bucket.counts[k];
     if (!c || !c[who]) continue;
-    for (let n = Math.ceil(c[who] / quantum); n > 0; n--) dots.push({ kind: k, human: who === 'human' });
+    const before = Math.ceil(cum / quantum);
+    cum += c[who];
+    for (let n = Math.ceil(cum / quantum) - before; n > 0; n--) dots.push({ kind: k });
   }
   return dots;
 }
