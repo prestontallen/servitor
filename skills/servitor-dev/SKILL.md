@@ -120,6 +120,22 @@ never be in. Re-seeding discards its migration history, so say so in the
 ticket. Its DSN is
 `postgres://servitor_staging:<pw>@localhost:5432/servitor_dev?sslmode=disable`.
 
+Gotchas from creating it the first time (2026-09, ticket
+dev-database-setup):
+
+- The prod dump's COPY for `ledger` restores 0 rows — the data lives in
+  TimescaleDB chunks and pg_dump's hypertable COPY comes out empty against
+  a fresh dev DB. After the normal restore, copy it explicitly:
+  `COPY (SELECT ... FROM ledger ORDER BY id) TO STDOUT` on prod, then a
+  plain `COPY ... FROM STDIN` on dev (from a file; a `-c` that mixes
+  other statements breaks the COPY protocol). Row counts must match
+  before calling the seed done.
+- Ownership transfer needs all three, or apply-schema dies on
+  `permission denied for schema public`: `ALTER DATABASE`, plus
+  `ALTER SCHEMA public OWNER TO servitor_staging`, plus the
+  tables/sequences DO loops. The `cagg_%` materialized views must also
+  move (`ALTER MATERIALIZED VIEW`), or ownership is silently split.
+
 `apply-schema` takes its DSN from the environment:
 
 ```bash
