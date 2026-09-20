@@ -116,27 +116,22 @@
       <div class="titlerow">
         <span class="status s-{doc.status}">{doc.status}{#if doc.blocked_on} · on {doc.blocked_on}{/if}</span>
         <span class="slug muted">{doc.slug}</span>
+        <!-- phase: four segments lit up to the card word; the word itself only while in flight -->
+        <span class="phase" title="phase: {PHASES[phaseIdx]}{terminal ? ', ' + doc.status : ''}">
+          <span class="segs">
+            {#each PHASES as ph, i (ph)}
+              {@const g = gateAt[GATE_BEFORE[ph]]}
+              {@const state = terminal || i === phaseIdx ? 'lit' : i < phaseIdx ? 'past' : 'next'}
+              <i class="seg {state}" title={g ? `${ph}: ${GATE_BEFORE[ph].replace('_approved', '')} by ${short(g.actor)} · ${fmtTs(g.ts)}` : i === 0 ? `${ph}: created` : `${ph}: not reached`}></i>
+            {/each}
+          </span>
+          {#if !terminal}
+            <span class="word">{PHASES[phaseIdx]}</span>
+            {#if GATE_BEFORE[PHASES[phaseIdx + 1]]}<span class="muted">· next {GATE_BEFORE[PHASES[phaseIdx + 1]].replace('_approved', '')}</span>{/if}
+          {/if}
+        </span>
       </div>
       <h2>{doc.title || doc.slug}</h2>
-
-      <ol class="stepper" class:terminal>
-        {#each PHASES as ph, i (ph)}
-          {@const g = gateAt[GATE_BEFORE[ph]]}
-          {@const state = terminal ? 'past' : i < phaseIdx ? 'past' : i === phaseIdx ? 'now' : 'next'}
-          <li class="step {state}">
-            <span class="dot"></span>
-            <span class="name">{ph}</span>
-            {#if g}
-              <span class="gate" class:human={g.actor?.startsWith('human:')} title={fmtTs(g.ts)}>✓ {GATE_BEFORE[ph].replace('_approved', '')} · {short(g.actor)} · {relTs(g.ts)}</span>
-            {:else if state === 'now' && GATE_BEFORE[PHASES[i + 1]]}
-              <span class="gate muted">next gate: {GATE_BEFORE[PHASES[i + 1]].replace('_approved', '')}</span>
-            {/if}
-          </li>
-        {/each}
-        {#if terminal}
-          <li class="step end"><span class="dot"></span><span class="name">{doc.status}</span></li>
-        {/if}
-      </ol>
 
       <div class="facts">
         {#if parentArc}<button class="fact link" onclick={() => openArc(parentArc.ulid)}>arc · {parentArc.slug}</button>{/if}
@@ -397,27 +392,19 @@
   .head.s-blocked { border-left-color: var(--fail); }
   .head.s-done { border-left-color: var(--ok); }
   .titlerow { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
+
   .status { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 9px; border-radius: 3px; background: var(--line-strong); color: var(--bg-raised); }
   .status.s-active { background: var(--accent); }
   .status.s-blocked { background: var(--fail); }
   .status.s-done { background: var(--ok); }
   .slug { font-size: 11px; }
-  h2 { margin: 0 0 14px; font-size: 18px; line-height: 1.3; }
-  .stepper { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); }
-  .stepper.terminal { grid-template-columns: repeat(5, 1fr); }
-  .step { position: relative; padding-right: 8px; min-width: 0; }
-  .step::before { content: ''; position: absolute; left: 14px; right: 0; top: 6px; height: 2px; background: var(--line); }
-  .step:last-child::before { display: none; }
-  .step.past::before { background: var(--accent); }
-  .dot { position: relative; z-index: 1; display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--bg-raised); border: 2px solid var(--line-strong); box-sizing: border-box; }
-  .step.past .dot { background: var(--accent); border-color: var(--accent); }
-  .step.now .dot { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
-  .step.end .dot { background: var(--ok); border-color: var(--ok); }
-  .step .name { display: block; margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
-  .step.past .name, .step.end .name { color: var(--text); }
-  .step.now .name { color: var(--accent); font-weight: 700; }
-  .step .gate { display: block; font-size: 10px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .step .gate.human { color: var(--accent); }
+  h2 { margin: 0 0 10px; font-size: 18px; line-height: 1.3; }
+  .phase { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text); white-space: nowrap; }
+  .segs { display: inline-flex; gap: 2px; }
+  .seg { display: block; width: 14px; height: 4px; border-radius: 1px; background: var(--accent); }
+  .seg.past { opacity: 0.45; }
+  .seg.next { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .word { text-transform: lowercase; }
   .facts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .fact { font-size: 11px; color: var(--text-dim); background: var(--bg-inset); border-radius: 3px; padding: 2px 8px; text-decoration: none; border: none; cursor: default; min-height: 0; line-height: 1.6; }
   .fact b { color: var(--text); font-weight: 500; }
@@ -571,9 +558,8 @@
     .pair, .scope, .callouts { grid-template-columns: 1fr; }
     .head { padding: 12px 12px 10px; }
     h2 { font-size: 16px; }
-    .stepper, .stepper.terminal { grid-template-columns: repeat(2, 1fr); row-gap: 12px; }
-    .step:nth-child(2n)::before { display: none; }
-    .step .gate { white-space: normal; }
+    .titlerow { flex-wrap: wrap; }
+    .phase { margin-left: 0; flex-basis: 100%; }
     .inst { padding: 12px 12px; }
     .stamp { position: static; align-self: flex-start; margin-bottom: 8px; }
     .contract h3 { padding-right: 0; }
