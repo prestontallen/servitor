@@ -1,7 +1,7 @@
-// Pure math for the Time view (Flow, Day, Cadence over a shared brush),
-// so `node --test` covers the layout and only the drawing lives in the
-// component. Style reference: DossierTimeline.svelte — measured pixels,
-// WORD_COLOR phases, blocked hatch, durations in text.
+// Pure math for the Time view (cadence, window and flow over a shared
+// brush), so `node --test` covers the layout and only the drawing lives
+// in the component. Bucket and segment shapes are the /api/timeline JSON
+// as served (snake_case keys).
 
 const DAY = 86400000;
 
@@ -29,28 +29,28 @@ export function timeHash(from, to) {
 
 // ---- Flow: segments -> per-ticket bars -------------------------------------
 
-// One lane per ticket, board order preserved. Each segment becomes a bar
-// clipped to the window; closed-by-window segments are dropped. Returns
-// lanes of {ulid, slug, title, bars:[{x0, x1, phase}]} in window-fraction
-// coordinates (0..1) — the component multiplies by measured width.
+// One lane per ticket that has a segment inside the window: board cards
+// first in board order, then tickets the board no longer lists (done or
+// dropped inside the window) in the order they first appear. Each segment
+// becomes a bar clipped to the window; segments outside it are dropped.
+// Returns lanes of {ulid, slug, title, bars:[{x0, x1, phase}]} in
+// window-fraction coordinates (0..1) — the component multiplies by width.
 export function flowLanes(segments, cards, from, to) {
-  const order = cards.map((c) => c.ulid);
   const byId = new Map(cards.map((c) => [c.ulid, c]));
-  const lanes = [];
-  for (const ulid of order) {
-    const c = byId.get(ulid);
-    lanes.push({ ulid, slug: c?.slug || ulid, title: c?.title || c?.slug || ulid, bars: [] });
-  }
-  const laneOf = new Map(lanes.map((l) => [l.ulid, l]));
+  const lanes = new Map();
+  for (const c of cards) lanes.set(c.ulid, { ulid: c.ulid, slug: c.slug || c.ulid, title: c.title || c.slug || c.ulid, bars: [] });
   for (const s of segments) {
-    const lane = laneOf.get(s.ticket);
-    if (!lane) continue; // ticket not on the board (done/dropped before the window)
+    const ulid = s.ticket_ulid;
+    if (!lanes.has(ulid)) {
+      const c = byId.get(ulid);
+      lanes.set(ulid, { ulid, slug: s.slug || c?.slug || ulid, title: c?.title || s.slug || ulid, bars: [] });
+    }
     const start = Math.max(t(s.from), from);
     const end = Math.min(t(s.to), to);
     if (end - start <= 0) continue;
-    lane.bars.push({ x0: (start - from) / (to - from), x1: (end - from) / (to - from), phase: s.phase });
+    lanes.get(ulid).bars.push({ x0: (start - from) / (to - from), x1: (end - from) / (to - from), phase: s.phase });
   }
-  return lanes.filter((l) => l.bars.length);
+  return [...lanes.values()].filter((l) => l.bars.length);
 }
 
 // ---- Cadence: hourly buckets -> per-day totals ------------------------------
@@ -67,7 +67,7 @@ export function cadenceDays(buckets) {
       days.push(idx.get(key));
     }
     const d = idx.get(key);
-    for (const [actor, n] of Object.entries(b.byActor || {})) {
+    for (const [actor, n] of Object.entries(b.by_actor || {})) {
       d.total += n;
       d.byActor[actor] = (d.byActor[actor] || 0) + n;
     }
@@ -80,23 +80,6 @@ export function dayKey(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-// ---- Day: buckets -> hourly columns of one calendar day ---------------------
-
-// Columns for one local day, midnight .. midnight, 24 slots (some empty).
-// Empty hours carry {events: 0} so the axis never skips.
-export function dayColumns(buckets, day) {
-  const cols = Array.from({ length: 24 }, (_, h) => ({ hour: h, events: 0, byActor: {} }));
-  for (const b of buckets) {
-    if (dayKey(b.hour) !== day) continue;
-    const h = new Date(b.hour).getHours();
-    for (const [actor, n] of Object.entries(b.byActor || {})) {
-      cols[h].events += n;
-      cols[h].byActor[actor] = (cols[h].byActor[actor] || 0) + n;
-    }
-  }
-  return cols;
 }
 
 // The calendar days the brush selection touches, oldest first — for the

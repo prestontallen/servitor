@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTimeHash, timeHash, flowLanes, cadenceDays, dayKey, dayColumns, daysIn, fmtDur } from './timeview.js';
+import { parseTimeHash, timeHash, flowLanes, cadenceDays, dayKey, daysIn, fmtDur } from './timeview.js';
 
 const NOW = new Date('2026-09-20T12:00:00').getTime();
 const iso = (ms) => new Date(ms).toISOString();
@@ -28,10 +28,10 @@ test('flowLanes: clips segments to the window, keeps board order, drops empty la
   const cards = [{ ulid: 'a' }, { ulid: 'b' }];
   const segments = [
     // a: straddles the window start
-    { ticket: 'a', phase: 'building', from: iso(from - 86400000), to: iso(from + 3600000) },
-    { ticket: 'a', phase: 'checking', from: iso(from + 3600000), to: iso(to + 86400000) },
+    { ticket_ulid: 'a', phase: 'building', from: iso(from - 86400000), to: iso(from + 3600000) },
+    { ticket_ulid: 'a', phase: 'checking', from: iso(from + 3600000), to: iso(to + 86400000) },
     // b: entirely before the window — dropped, lane gone
-    { ticket: 'b', phase: 'queued', from: iso(from - 86400000 * 3), to: iso(from - 86400000 * 2) },
+    { ticket_ulid: 'b', phase: 'queued', from: iso(from - 86400000 * 3), to: iso(from - 86400000 * 2) },
   ];
   const lanes = flowLanes(segments, cards, from, to);
   assert.deepEqual(lanes.map((l) => l.ulid), ['a']);
@@ -42,33 +42,30 @@ test('flowLanes: clips segments to the window, keeps board order, drops empty la
   assert.equal(bar2.x1, 1); // clipped at the window end
 });
 
+test('flowLanes: a ticket that finished inside the window still gets a lane, after the board cards', () => {
+  const from = NOW - 2 * 86400000;
+  const to = NOW;
+  const cards = [{ ulid: 'a', slug: 'a-slug' }];
+  const segments = [
+    { ticket_ulid: 'z', slug: 'z-done', phase: 'shipping', from: iso(from + 3600000), to: iso(from + 7200000) },
+    { ticket_ulid: 'a', phase: 'building', from: iso(from), to: iso(to) }
+  ];
+  const lanes = flowLanes(segments, cards, from, to);
+  assert.deepEqual(lanes.map((l) => [l.ulid, l.slug]), [['a', 'a-slug'], ['z', 'z-done']]);
+});
+
 test('cadenceDays folds hourly buckets to local days in order', () => {
   // two hours on one day, one on the next
   const buckets = [
-    { hour: '2026-09-19T10:00:00', byActor: { agent: 3, human: 1 } },
-    { hour: '2026-09-19T11:00:00', byActor: { agent: 2 } },
-    { hour: '2026-09-20T01:00:00', byActor: { human: 4 } },
+    { hour: '2026-09-19T10:00:00', by_actor: { agent: 3, human: 1 } },
+    { hour: '2026-09-19T11:00:00', by_actor: { agent: 2 } },
+    { hour: '2026-09-20T01:00:00', by_actor: { human: 4 } },
   ];
   const days = cadenceDays(buckets);
   assert.deepEqual(days.map((d) => d.day), ['2026-09-19', '2026-09-20']);
   assert.equal(days[0].total, 6);
   assert.equal(days[1].total, 4);
   assert.deepEqual(days[0].byActor, { agent: 5, human: 1 });
-});
-
-test('dayColumns: 24 slots, empty hours zeroed, foreign days ignored', () => {
-  const day = '2026-09-19';
-  const buckets = [
-    { hour: '2026-09-19T10:00:00', byActor: { agent: 3 } },
-    { hour: '2026-09-20T10:00:00', byActor: { agent: 9 } },
-  ];
-  const cols = dayColumns(buckets, day);
-  assert.equal(cols.length, 24);
-  assert.equal(cols[10].events, 3);
-  assert.equal(cols[9].events, 0);
-  // 10:00 local means hour index 10 only if the bucket is local-naive;
-  // the fixture is parsed as local time, so index follows getHours()
-  assert.equal(cols[new Date('2026-09-19T10:00:00').getHours()].events, 3);
 });
 
 test('daysIn lists every calendar day of the selection, oldest first', () => {

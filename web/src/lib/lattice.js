@@ -2,8 +2,11 @@
 // Pure functions so the layout is testable without a DOM. The strip
 // component owns pixels; this owns the counting.
 
-// stacking order within a column, baseline outward
-export const KIND_ORDER = ['decision', 'feedback', 'note'];
+// stacking order within a column, baseline outward. 'event' is the kind
+// of a count that arrives without one (the timeline endpoint's actor
+// buckets); it draws in ink like a note.
+export const KIND_ORDER = ['decision', 'feedback', 'note', 'event'];
+export const KIND_COLOR = { decision: 'var(--k-decision)', feedback: 'var(--k-feedback)', note: 'var(--text)', event: 'var(--text)' };
 
 const side = (e) => (e.actor_type === 'human' ? 'human' : 'agent');
 
@@ -23,6 +26,27 @@ export function bucketize(events, min, max, cols) {
     const who = side(e);
     (b.counts[e.kind] ??= { human: 0, agent: 0 })[who]++;
     b[who]++;
+  }
+  return out;
+}
+
+// the timeline endpoint's hourly {hour, by_actor} buckets folded into
+// `cols` lattice columns over [min, max]: every count is kind 'event',
+// human on the human side, agent and system on the agent side.
+export function fromActorBuckets(hours, min, max, cols) {
+  const out = Array.from({ length: cols }, (_, i) => ({
+    i, start: min + ((max - min) * i) / cols, counts: {}, human: 0, agent: 0
+  }));
+  if (cols <= 0 || max <= min) return out;
+  for (const h of hours) {
+    const t = new Date(h.hour).getTime();
+    if (t < min || t > max) continue;
+    const b = out[Math.min(cols - 1, Math.floor(((t - min) / (max - min)) * cols))];
+    for (const [actor, n] of Object.entries(h.by_actor || {})) {
+      const who = actor === 'human' ? 'human' : 'agent';
+      (b.counts.event ??= { human: 0, agent: 0 })[who] += n;
+      b[who] += n;
+    }
   }
   return out;
 }

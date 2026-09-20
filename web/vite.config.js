@@ -12,7 +12,8 @@ export default defineConfig({
 	},
 	server: {
 		proxy: {
-			'/api': 'http://localhost:8181'
+			// SERVITOR_API=http://host:port points the dev GUI at another daemon
+			'/api': process.env.SERVITOR_API || 'http://localhost:8181'
 		}
 	}
 });

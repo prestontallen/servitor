@@ -1,19 +1,14 @@
 <script>
-  // Per-ticket timeline as a dot lattice. One SVG in measured pixels: a
-  // bare baseline from created to now (or the terminal milestone); every
-  // signal event a dot snapped to a fixed grid, the human's above the
-  // line and the agents' below, hue by kind, stacked baseline outward.
-  // Milestones are thin dashed annotation lines through the lattice,
-  // blocked spans a run of red dots on the baseline. A label that would
-  // collide drops a row; its dashed line runs down to meet it.
-  // The chain under the drawing prints every duration in text, so the
-  // numbers survive any width.
+  // Per-ticket timeline: the dot lattice from created to now (or the
+  // terminal milestone), milestones as dashed lines, blocked spans as
+  // runs on the baseline, and the numbers in a text chain underneath so
+  // they survive any width. The drawing itself is DotLattice.
   import { fmtTs } from './state.svelte.js';
-  import { bucketize, quantumFor, stack, rowsFor, stackLabels, KIND_ORDER } from './lattice.js';
+  import DotLattice from './DotLattice.svelte';
+  import { bucketize, KIND_ORDER, KIND_COLOR } from './lattice.js';
 
   let { doc, history = [] } = $props();
 
-  let width = $state(0);
   let now = $state(Date.now());
   $effect(() => {
     const id = setInterval(() => (now = Date.now()), 30000);
@@ -23,8 +18,7 @@
   // card word that holds after each milestone (derived from the latest gate)
   const WORD_AFTER = { created: 'shaping', contract: 'building', presented: 'checking', shipped: 'shipping' };
   const TERMINAL = new Set(['done', 'dropped']);
-  const SIGNAL_KINDS = new Set(KIND_ORDER);
-  const KIND_COLOR = { decision: 'var(--k-decision)', feedback: 'var(--k-feedback)', note: 'var(--text)' };
+  const SIGNAL_KINDS = new Set(['note', 'decision', 'feedback']);
 
   const t = (iso) => new Date(iso).getTime();
 
@@ -62,8 +56,6 @@
     if (max <= min) max = min + 1;
     return { min, max };
   });
-
-  const x = (ms) => ((Math.min(Math.max(ms, span.min), span.max) - span.min) / (span.max - span.min)) * width;
 
   // phase segments between consecutive milestones, for the text chain
   const segments = $derived.by(() => {
@@ -103,59 +95,15 @@
     return c;
   });
 
-  // ---- lattice --------------------------------------------------------
-  const CELL = 8, R = 2.5;                // grid pitch and dot radius (px)
-  const MAX_ROWS = 12;                    // per side; beyond this a dot is a quantum
-  const cols = $derived(Math.max(1, Math.floor(width / CELL)));
-  const buckets = $derived(span && width ? bucketize(signals, span.min, span.max, cols) : []);
-  const quantum = $derived(quantumFor(buckets, MAX_ROWS));
-  const rows = $derived.by(() => {
-    const r = rowsFor(buckets, quantum);
-    // keep a row on each side so the baseline never sits on an edge
-    return { human: Math.max(1, r.human), agent: Math.max(1, r.agent) };
-  });
-  const bucketMs = $derived(span ? (span.max - span.min) / cols : 0);
-
-  function columnTitle(b) {
-    const n = b.human + b.agent;
-    if (!n) return '';
-    const parts = KIND_ORDER.filter((k) => b.counts[k]).map((k) => {
-      const c = b.counts[k].human + b.counts[k].agent;
-      return `${c} ${k}${c === 1 ? '' : 's'}`;
-    });
-    const from = fmtTs(new Date(b.start).toISOString());
-    return `${from} +${fmtDur(bucketMs)}\n${parts.join(', ')}${b.human ? ` · ${b.human} by the human` : ''}`;
-  }
-
-  // ---- layout (px) ------------------------------------------------------
-  const TOP = 2;
-  const y0 = $derived(TOP + rows.human * CELL);                 // baseline
-  const lowY = $derived(y0 + rows.agent * CELL);                // bottom of agent dots
-  const LABEL_PX = 6.1, SIG_PX = 5.2;     // ~px per char: uppercase label, signature
-  const GAP = 10, ROW_H = 11;
-  const labelY = $derived(lowY + 16);     // first label baseline
-
-  // the human's approval is the one signature worth showing on the drawing
-  const sigOf = (m) => (m.key === 'contract' && m.who?.startsWith('human:') ? ' · ' + m.who.replace(/^\w+:/, '') : '');
-
-  // labels: centred on their own line; a collision takes the lowest free row
-  const ticks = $derived.by(() => {
-    if (!span || !width) return [];
-    const snap = (px) => Math.min(cols - 1, Math.floor(px / CELL)) * CELL + CELL / 2;
-    const items = milestones.map((m) => ({ ...m, cx: snap(x(m.t)), label: m.key.toUpperCase(), sig: sigOf(m) }));
-    if (!terminal) items.push({ key: 'now', label: 'NOW', sig: '', t: now, cx: snap(width) });
-    return stackLabels(items.map((it) => ({ ...it, w: it.label.length * LABEL_PX + it.sig.length * SIG_PX })), width, GAP);
-  });
-
-  const labelRows = $derived(ticks.reduce((n, tk) => Math.max(n, tk.row + 1), 1));
-  const height = $derived(labelY + (labelRows - 1) * ROW_H + 4);
-
   // next gate for an in-flight ticket, from the gates already passed
   const nextGate = $derived.by(() => {
     if (terminal) return null;
     const have = new Set(milestones.map((m) => m.key));
     return ['contract', 'presented', 'shipped'].find((g) => !have.has(g)) || null;
   });
+
+  // ---- what the lattice draws --------------------------------------------
+  let quantum = $state(1);
 
   // milestone hue: the human's gates and now in the accent, done in ok, the rest ink
   function tickColor(key, who) {
@@ -164,53 +112,27 @@
     if (key === 'dropped') return 'var(--fail)';
     return 'var(--text-dim)';
   }
+  // the human's approval is the one signature worth showing on the drawing
+  const sigOf = (m) => (m.key === 'contract' && m.who?.startsWith('human:') ? ' · ' + m.who.replace(/^\w+:/, '') : '');
+
+  const ticks = $derived.by(() => {
+    const out = milestones.map((m) => ({
+      key: m.key, t: m.t, label: m.key.toUpperCase(), sig: sigOf(m), color: tickColor(m.key, m.who),
+      title: `${m.key}${m.who ? ' by ' + m.who : ''}: ${fmtTs(new Date(m.t).toISOString())}`
+    }));
+    if (!terminal && span) out.push({ key: 'now', t: span.max, label: 'NOW', color: tickColor('now'), title: `now: ${fmtTs(new Date(now).toISOString())}` });
+    return out;
+  });
+  const runs = $derived(blocked.map((b) => ({
+    start: b.start, end: b.end,
+    title: `blocked on ${b.on}: ${fmtDur(b.end - b.start)}, from ${fmtTs(new Date(b.start).toISOString())}`
+  })));
+  const bucketsFor = (cols) => bucketize(signals, span.min, span.max, cols);
 </script>
 
 {#if span}
-  <div class="dtl" bind:clientWidth={width} data-testid="dossier-timeline">
-    {#if width > 0}
-      <svg {width} {height} aria-label="ticket timeline: signals per column, human above the line, agents below">
-        <!-- milestones: dashed annotation lines through the lattice, under the signal dots -->
-        {#each ticks as tk (tk.key)}
-          <g class="tick" style:color={tickColor(tk.key, tk.who)}>
-            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
-            <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
-            <title>{tk.key}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
-          </g>
-        {/each}
-
-        <!-- baseline, with blocked spans as a run of dots on it -->
-        <line class="base" x1="0" x2={width} y1={y0} y2={y0} />
-        {#each blocked as b}
-          {@const c0 = Math.min(cols - 1, Math.floor(x(b.start) / CELL))}
-          {@const c1 = Math.min(cols - 1, Math.floor(x(b.end) / CELL))}
-          <g class="blocked">
-            {#each { length: c1 - c0 + 1 } as _, i}
-              <circle cx={(c0 + i) * CELL + CELL / 2} cy={y0} r={R} />
-            {/each}
-            <title>blocked on {b.on}: {fmtDur(b.end - b.start)}, from {fmtTs(new Date(b.start).toISOString())}</title>
-          </g>
-        {/each}
-
-        <!-- the lattice: one dot per signal (or per quantum), human up, agent down -->
-        {#each buckets as b (b.i)}
-          {#if b.human + b.agent}
-            {@const cx = b.i * CELL + CELL / 2}
-            <g class="col">
-              {#each stack(b, 'human', quantum) as d, r}
-                <circle cx={cx} cy={y0 - 1 - (r * CELL + CELL / 2)} r={R} fill={KIND_COLOR[d.kind]} class="dot human" />
-              {/each}
-              {#each stack(b, 'agent', quantum) as d, r}
-                <circle cx={cx} cy={y0 + 1 + (r * CELL + CELL / 2)} r={R} fill={KIND_COLOR[d.kind]} class="dot" />
-              {/each}
-              <rect class="hit" x={b.i * CELL} y={TOP} width={CELL} height={lowY - TOP}>
-                <title>{columnTitle(b)}</title>
-              </rect>
-            </g>
-          {/if}
-        {/each}
-      </svg>
-    {/if}
+  <div class="dtl" data-testid="dossier-timeline">
+    <DotLattice {span} {bucketsFor} {ticks} {runs} bind:quantum label="ticket timeline: signals per column, human above the line, agents below" />
 
     <!-- the numbers, in text, whatever the width -->
     <div class="chain">
@@ -236,19 +158,6 @@
 
 <style>
   .dtl { margin: 8px 0 8px; }
-  svg { display: block; overflow: visible; }
-  .base { stroke: var(--line-strong); stroke-width: 1; }
-  .blocked circle { fill: var(--fail); opacity: 0.85; }
-  .dot { opacity: 0.55; }
-  .dot.human { opacity: 1; }
-  .hit { fill: transparent; }
-  .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
-  .tick line { stroke: currentColor; stroke-width: 1; opacity: 0.8; }
-  .tick line.dash { stroke-dasharray: 2 3; }
-  .tick text {
-    fill: currentColor; font-size: 9px; letter-spacing: 0.06em;
-  }
-  .tick .sig { fill: var(--text-dim); letter-spacing: 0; }
   .link.next { color: var(--accent); }
   .link.next b { color: var(--accent); }
   .chain {
