@@ -4,12 +4,12 @@
   // signal event a dot snapped to a fixed grid, the human's above the
   // line and the agents' below, hue by kind, stacked baseline outward.
   // Milestones are thin dashed annotation lines through the lattice,
-  // blocked spans a run of red dots on the baseline. Labels step down a
-  // row when they would collide.
+  // blocked spans a run of red dots on the baseline. Labels that would
+  // collide slide apart and get a leader back to their line.
   // The chain under the drawing prints every duration in text, so the
   // numbers survive any width.
   import { fmtTs } from './state.svelte.js';
-  import { bucketize, quantumFor, stack, rowsFor, KIND_ORDER } from './lattice.js';
+  import { bucketize, quantumFor, stack, rowsFor, placeLabels, KIND_ORDER } from './lattice.js';
 
   let { doc, history = [] } = $props();
 
@@ -104,8 +104,8 @@
   });
 
   // ---- lattice --------------------------------------------------------
-  const CELL = 6, R = 2;                  // grid pitch and dot radius (px)
-  const MAX_ROWS = 8;                     // per side; beyond this a dot is a quantum
+  const CELL = 8, R = 2.5;                // grid pitch and dot radius (px)
+  const MAX_ROWS = 12;                    // per side; beyond this a dot is a quantum
   const cols = $derived(Math.max(1, Math.floor(width / CELL)));
   const buckets = $derived(span && width ? bucketize(signals, span.min, span.max, cols) : []);
   const quantum = $derived(quantumFor(buckets, MAX_ROWS));
@@ -131,33 +131,30 @@
   const TOP = 2;
   const y0 = $derived(TOP + rows.human * CELL);                 // baseline
   const lowY = $derived(y0 + rows.agent * CELL);                // bottom of agent dots
-  const LABEL_PX = 6.1;                   // ~px per uppercase 10px char
-  const ROW_H = 12;
-  const GAP = 8;
-  const labelY = $derived(lowY + 14);     // first label baseline
+  const LABEL_PX = 6.1, SIG_PX = 5.2;     // ~px per char: uppercase label, signature
+  const GAP = 10;
+  const labelY = $derived(lowY + 16);     // label baseline
 
-  // tick labels: greedy left-to-right, drop a row on collision
+  // the human's approval is the one signature worth showing on the drawing
+  const sigOf = (m) => (m.key === 'contract' && m.who?.startsWith('human:') ? ' · ' + m.who.replace(/^\w+:/, '') : '');
+
+  // labels: time order kept, collisions slide apart, a leader joins a moved label to its line
   const ticks = $derived.by(() => {
     if (!span || !width) return [];
     const snap = (px) => Math.min(cols - 1, Math.floor(px / CELL)) * CELL + CELL / 2;
-    const items = milestones.map((m) => ({ ...m, label: m.key, cx: snap(x(m.t)) }));
-    if (!terminal) items.push({ key: 'now', label: 'now', t: now, cx: snap(width) });
-    const rowsRight = [];
-    return items.map((it) => {
-      const w = it.label.length * LABEL_PX;
-      let left = it.cx - w / 2, anchor = 'middle';
-      if (left < 0) { left = 0; anchor = 'start'; }
-      else if (left + w > width) { left = width - w; anchor = 'end'; }
-      let row = 0;
-      while (row < rowsRight.length && left < rowsRight[row] + GAP) row++;
-      rowsRight[row] = left + w;
-      const tx = anchor === 'middle' ? it.cx : anchor === 'start' ? 0 : width;
-      return { ...it, row, tx, anchor };
-    });
+    const items = milestones.map((m) => ({ ...m, cx: snap(x(m.t)), label: m.key.toUpperCase(), sig: sigOf(m) }));
+    if (!terminal) items.push({ key: 'now', label: 'NOW', sig: '', t: now, cx: snap(width) });
+    return placeLabels(items.map((it) => ({ ...it, w: it.label.length * LABEL_PX + it.sig.length * SIG_PX })), width, GAP, CELL / 2);
   });
 
-  const labelRows = $derived(ticks.reduce((n, tk) => Math.max(n, tk.row + 1), 1));
-  const height = $derived(labelY + (labelRows - 1) * ROW_H + 4);
+  const height = $derived(labelY + 4);
+
+  // next gate for an in-flight ticket, from the gates already passed
+  const nextGate = $derived.by(() => {
+    if (terminal) return null;
+    const have = new Set(milestones.map((m) => m.key));
+    return ['contract', 'presented', 'shipped'].find((g) => !have.has(g)) || null;
+  });
 
   // milestone hue: the human's gates and now in the accent, done in ok, the rest ink
   function tickColor(key, who) {
@@ -175,9 +172,10 @@
         <!-- milestones: dashed annotation lines through the lattice, under the signal dots -->
         {#each ticks as tk (tk.key)}
           <g class="tick" style:color={tickColor(tk.key, tk.who)}>
-            <line x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
-            <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label.toUpperCase()}</text>
-            <title>{tk.label}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
+            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={lowY + 3} />
+            {#if tk.displaced}<line class="lead" x1={tk.cx} x2={tk.lx} y1={lowY + 3} y2={labelY - 9} />{/if}
+            <text x={tk.lx} y={labelY} text-anchor="middle">{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
+            <title>{tk.key}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
           </g>
         {/each}
 
@@ -216,12 +214,13 @@
 
     <!-- the numbers, in text, whatever the width -->
     <div class="chain">
-      {#each segments as s}
+      {#each segments as s, i}
         <span class="link" title="{s.from} → {s.to}">
           {#if s.word}{s.word}{:else}{s.from} → {s.to}{/if}
-          <b>{fmtDur(s.end - s.start)}</b>
+          <b>{fmtDur(s.end - s.start)}{#if !terminal && i === segments.length - 1} so far{/if}</b>
         </span>
       {/each}
+      {#if nextGate}<span class="link next">next gate <b>{nextGate}</b></span>{/if}
       {#each blocked as b}
         <span class="link blocked"><i></i>blocked on {b.on} <b>{fmtDur(b.end - b.start)}</b></span>
       {/each}
@@ -236,7 +235,7 @@
 {/if}
 
 <style>
-  .dtl { margin: 6px 0 8px; }
+  .dtl { margin: 8px 0 8px; }
   svg { display: block; overflow: visible; }
   .base { stroke: var(--line-strong); stroke-width: 1; }
   .blocked circle { fill: var(--fail); opacity: 0.85; }
@@ -244,10 +243,15 @@
   .dot.human { opacity: 1; }
   .hit { fill: transparent; }
   .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
-  .tick line { stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
+  .tick line { stroke: currentColor; stroke-width: 1; opacity: 0.8; }
+  .tick line.dash { stroke-dasharray: 2 3; }
+  .tick line.lead { opacity: 0.5; }
   .tick text {
     fill: currentColor; font-size: 9px; letter-spacing: 0.06em;
   }
+  .tick .sig { fill: var(--text-dim); letter-spacing: 0; }
+  .link.next { color: var(--accent); }
+  .link.next b { color: var(--accent); }
   .chain {
     display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px;
     font-size: 11px; color: var(--text-dim);

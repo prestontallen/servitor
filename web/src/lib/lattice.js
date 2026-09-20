@@ -59,3 +59,23 @@ export function rowsFor(buckets, quantum) {
   }
   return { human, agent };
 }
+
+// milestone labels along a width: keep them in time order with at least
+// `gap` px between, sliding right (then back from the right edge) rather
+// than stacking rows. Each item is {cx, w}; the result adds lx (the
+// label's centre) and displaced (true when a leader should join lx to cx).
+export function placeLabels(items, width, gap = 10, tol = 4) {
+  const out = items.map((it) => ({ ...it, left: Math.max(0, Math.min(it.cx - it.w / 2, width - it.w)) }));
+  for (let i = 1; i < out.length; i++) {
+    const min = out[i - 1].left + out[i - 1].w + gap;
+    if (out[i].left < min) out[i].left = min;
+  }
+  for (let i = out.length - 1; i >= 0; i--) {
+    const max = i === out.length - 1 ? width - out[i].w : out[i + 1].left - gap - out[i].w;
+    if (out[i].left > max) out[i].left = max;
+  }
+  return out.map((it) => {
+    const lx = it.left + it.w / 2;
+    return { ...it, lx, displaced: Math.abs(lx - it.cx) > tol };
+  });
+}
