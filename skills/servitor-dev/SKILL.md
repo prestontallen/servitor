@@ -1,23 +1,53 @@
 ---
 name: servitor-dev
-description: Servitor repo dev process — staging databases, demo daemons, and the schema migration order for agents working in this repo.
+description: Servitor repo dev process — which target a change is demonstrated against (running service, staging database, or the long-lived dev database), the staging lifecycle, and the schema migration order for agents working in this repo.
 ---
 
-# Servitor dev process: staging, demos, schema discipline
+# Servitor dev process: demo targets, staging, schema discipline
 
 The production ledger (`servitor` database, `servitord.service` on :8181)
-is the system of record. Agents never connect to it. All development,
-testing, and demos run against per-worktree staging databases: one
-staging DB per worktree, named for the ticket slug (see ticket-flow).
+is the system of record. Agents never connect to its database. Where a
+change is demonstrated depends on what the change touches:
 
-## One-time setup (done once per host, by the human or install.sh)
+| Change touches | Demo target | Database |
+|---|---|---|
+| `web/` only (GUI) | the running service on :8181, through Vite's proxy | none |
+| `cmd/`, `internal/` (daemon, CLI, MCP, API) | the worktree's built daemon | per-worktree staging DB, seeded from prod |
+| the schema (`apply-schema` migrations) | the worktree's built daemon | the long-lived dev database `servitor_dev` |
+
+Pick the row by the diff, not by habit. A diff that touches Go is a
+binary change even if it started as a GUI ticket. A GUI change that
+writes is also a binary-class demo, because through the proxy its
+writes would land in the prod ledger.
+
+## GUI-only changes: hit the running service
+
+No database, no daemon, nothing to seed or tear down.
+
+```bash
+cd <worktree>/web
+npm ci
+npx vite --port <worktree-port> --strictPort
+```
+
+`vite.config.js` proxies `/api` to `http://localhost:8181`, so the new
+GUI reads the real ledger. Demo URL: `http://localhost:<port>/#/...`.
+Teardown is killing Vite. The built GUI is embedded into the daemon at
+build time, so the change reaches :8181 only after merge and redeploy.
+
+## Binary changes: per-worktree staging database
+
+One staging DB per worktree, named for the ticket slug.
+
+### One-time setup (done once per host, by the human or install.sh)
 
 - Postgres role `servitor_staging` with login + password, granted rights
-  only on `servitor_staging_*` databases. Never the prod `servitor` DB.
+  only on `servitor_staging_*` and `servitor_dev` databases. Never the
+  prod `servitor` DB.
 - Credentials in `~/.config/servitor/staging.env` (outside the repo,
   never committed): `SERVITOR_STAGING_PASSWORD`.
 
-## Staging database lifecycle (per worktree)
+### Lifecycle
 
 ```bash
 source ~/.config/servitor/staging.env   # SERVITOR_STAGING_PASSWORD
@@ -32,8 +62,7 @@ docker exec timescaledb psql -U postgres -c "DROP DATABASE IF EXISTS $STAGE_DB W
 docker exec timescaledb psql -U postgres -c "CREATE DATABASE $STAGE_DB"
 docker exec timescaledb psql -U postgres -d "$STAGE_DB" -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
 
-# seed from prod snapshot — demos show real shape, and migrations get
-# exercised against real data before prod ever sees them
+# seed from prod snapshot so demos show real shape
 docker exec timescaledb pg_dump -U postgres servitor \
   | docker exec -i timescaledb psql -U postgres -d "$STAGE_DB"
 
@@ -52,15 +81,14 @@ docker exec timescaledb psql -U postgres -d "$STAGE_DB" -c \
   "SELECT tablename, tableowner FROM pg_tables WHERE schemaname='public'"
 ```
 
-The role/password live in `~/.config/servitor/staging.env`. The staging
-DSN is therefore:
+The staging DSN is
 `postgres://servitor_staging:<pw>@localhost:5432/$STAGE_DB?sslmode=disable`.
 
 Seeding from prod is the default. Do not put secrets into tickets/events
 that you would not want copied into staging (staging is same-host, same
 trust domain — this is about hygiene, not security).
 
-## Staging daemon (per worktree)
+### Staging daemon
 
 ```bash
 cd <worktree>
@@ -68,23 +96,44 @@ go build -o /tmp/servitord-<slug> ./cmd/servitord
 SERVITOR_DSN="postgres://servitor_staging:<pw>@localhost:5432/$STAGE_DB?sslmode=disable" \
 SERVITOR_ADDR=":<worktree-port>" \
   /tmp/servitord-<slug> &
-/home/preston/.local/bin/servitord apply-schema   # NEVER against prod; see below
 ```
 
-- The staging daemon serves the worktree's embedded GUI on its own port —
-  this is the demo URL for the iPad (better than Vite for demos: no proxy,
-  production build).
-- `apply-schema` takes its DSN from the environment. Rule: the staging
-  daemon's env is set per-invocation (as above); the prod daemon's env
+- The staging daemon serves the worktree's embedded GUI on its own port,
+  so a binary change that also has GUI work is demoed there, not through
+  Vite. Bookmark `http://<host>:<port>/` on the iPad, hard-refresh.
+- CLI/MCP changes: `SERVITOR_API=http://localhost:<port>` and exercise
+  the new verbs against the staging daemon.
+- The daemon's env is set per-invocation, as above; the prod daemon's env
   lives only in its systemd unit. Never export a prod DSN into a shell.
 
-## Schema migration order (hard sequence)
+## Schema migrations: the long-lived dev database
+
+Migrations are rehearsed on `servitor_dev`, one database that persists
+across tickets and receives every migration in the order prod will.
+A fresh restore per ticket only proves a migration survives a snapshot;
+the dev database also proves it survives the migrations before it.
+
+Create it once with the staging lifecycle above and `STAGE_DB=servitor_dev`,
+then keep it. Re-seed from a prod snapshot only deliberately: when prod
+has moved far past it, or when a rehearsal left it in a state prod will
+never be in. Re-seeding discards its migration history, so say so in the
+ticket. Its DSN is
+`postgres://servitor_staging:<pw>@localhost:5432/servitor_dev?sslmode=disable`.
+
+`apply-schema` takes its DSN from the environment:
+
+```bash
+SERVITOR_DSN="postgres://servitor_staging:<pw>@localhost:5432/servitor_dev?sslmode=disable" \
+  /tmp/servitord-<slug> apply-schema      # NEVER against prod; see below
+```
+
+### Migration order (hard sequence)
 
 1. Fixture tests pass (`go test`) — proves the migration is *correct*.
-2. Restore prod snapshot into staging, run `apply-schema` — proves the
-   migration *survives real data* (this catches what fixtures miss).
-3. Exercise the migrated schema through the staging daemon (CLI + GUI).
-4. Demo to the human on staging. `presented` evidence = staging URL or
+2. `apply-schema` against `servitor_dev` — proves the migration survives
+   real data and the migrations already applied before it.
+3. Exercise the migrated schema through a daemon on the dev DSN (CLI + GUI).
+4. Demo to the human on that daemon. `presented` evidence = its URL or a
    CLI transcript, not test output alone.
 5. Only after gate acceptance: merge to main, redeploy via install.sh,
    and run `apply-schema` against prod (env from the systemd unit).
@@ -92,21 +141,14 @@ SERVITOR_ADDR=":<worktree-port>" \
 A migration that fails at step 2 or 3 is not "mostly done" — it is a
 defect, fix before demoing.
 
-## Demo recipes
-
-- **GUI change**: staging daemon's port serves the built GUI. Bookmark
-  `http://<host>:<port>/` on the iPad, hard-refresh.
-- **Service/CLI change**: point the CLI at staging with
-  `SERVITOR_API=http://localhost:<port>` and exercise the new verbs.
-- **Schema change**: the migration order above IS the demo.
-
 ## Teardown
 
-When the task's worktree is released, drop its staging database:
-
-```bash
-docker exec timescaledb psql -U postgres -c "DROP DATABASE IF EXISTS $STAGE_DB WITH (FORCE)"
-```
-
-Staging DBs are disposable by design; anything valuable lives in the
-ledger or the code, never only in staging.
+- GUI-only: kill Vite. Nothing else exists.
+- Binary: when the worktree is released, drop its staging database:
+  ```bash
+  docker exec timescaledb psql -U postgres -c "DROP DATABASE IF EXISTS $STAGE_DB WITH (FORCE)"
+  ```
+  Staging DBs are disposable by design; anything valuable lives in the
+  ledger or the code, never only in staging.
+- Migrations: never drop `servitor_dev` as part of a ticket. It is
+  long-lived on purpose.

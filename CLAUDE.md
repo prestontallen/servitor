@@ -11,7 +11,8 @@ focused card, then the ticket. Hermes sessions run it by hand.
    and the hard checkpoints (summary before commit, prompt before push).
 3. The `ticket-flow` skill is how work lands: one branch and worktree per
    ticket, PR-based merge, nothing is pushed to main directly.
-4. The `servitor-dev` skill covers staging databases and the schema
+4. The `servitor-dev` skill covers demo targets (running service, staging
+   database, or the long-lived dev database) and the schema
    migration order.
 
 Skills live in skills/ and install.sh links them into ~/.claude/skills and
