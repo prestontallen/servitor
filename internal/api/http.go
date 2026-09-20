@@ -87,6 +87,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/feedback", h.feedback)
 	mux.HandleFunc("GET /api/analytics", h.analytics)
 	mux.HandleFunc("GET /api/analytics/handoffs", h.handoffs)
+	mux.HandleFunc("GET /api/timeline", h.timeline)
 	mux.Handle("/", h.static())
 	return h.authed(mux)
 }
@@ -152,6 +153,52 @@ func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(buckets)
+}
+
+// timeline: /api/timeline?days=N or ?since=&until= (RFC3339 or a bare
+// date). Bad timestamps are a 422, never silently ignored.
+func (h *HTTP) timeline(w http.ResponseWriter, r *http.Request) {
+	q := TimelineQuery{Days: 30}
+	if d := r.URL.Query().Get("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil {
+			q.Days = n
+		}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if s := r.URL.Query().Get("since"); s != "" {
+			if t, err := time.Parse(layout, s); err == nil {
+				q.Since = &t
+				break
+			}
+		}
+	}
+	if q.Since == nil {
+		if s := r.URL.Query().Get("since"); s != "" {
+			writeErr(w, &APIError{Code: "invalid_payload", Message: "since must be RFC3339 or YYYY-MM-DD"})
+			return
+		}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if s := r.URL.Query().Get("until"); s != "" {
+			if t, err := time.Parse(layout, s); err == nil {
+				q.Until = &t
+				break
+			}
+		}
+	}
+	if q.Until == nil {
+		if s := r.URL.Query().Get("until"); s != "" {
+			writeErr(w, &APIError{Code: "invalid_payload", Message: "until must be RFC3339 or YYYY-MM-DD"})
+			return
+		}
+	}
+	tl, err := h.Service.Timeline(r.Context(), q)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tl)
 }
 
 // handoffs serves per-ticket human/agent round-trip latency.
