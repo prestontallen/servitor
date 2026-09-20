@@ -13,6 +13,9 @@
   --text-dim: #8a8a84;
   --shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   --flash-bg: rgba(255, 255, 255, 0.08);
+  /* ledger kind hues for dot marks; CVD-checked against the dark surface */
+  --k-decision: #4a9ad4;
+  --k-feedback: #e264a8;
 }
 
 :root[data-mode='light'] {
@@ -25,6 +28,8 @@
   --text-dim: #6f6f66;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   --flash-bg: rgba(0, 0, 0, 0.05);
+  --k-decision: #2f6fb8;
+  --k-feedback: #b8358f;
 }
 
 /* accent: forge (rust) */

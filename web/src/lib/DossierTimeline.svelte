@@ -1,11 +1,15 @@
 <script>
-  // Per-ticket timeline (VIZ 1). One SVG drawn in measured pixels, so
-  // nothing overlaps or clamps: a phase band coloured by card word,
-  // blocked spans hatched over it, signal events as a density strip above,
-  // milestone ticks below with labels that step down a row when they would
-  // collide. The chain under the drawing prints every duration in text, so
-  // the numbers survive any width.
+  // Per-ticket timeline as a dot lattice. One SVG in measured pixels: a
+  // bare baseline from created to now (or the terminal milestone); every
+  // signal event a dot snapped to a fixed grid, the human's above the
+  // line and the agents' below, hue by kind, stacked baseline outward.
+  // Milestones are thin dashed annotation lines through the lattice,
+  // blocked spans a run of red dots on the baseline. Labels step down a
+  // row when they would collide.
+  // The chain under the drawing prints every duration in text, so the
+  // numbers survive any width.
   import { fmtTs } from './state.svelte.js';
+  import { bucketize, quantumFor, stack, rowsFor, KIND_ORDER } from './lattice.js';
 
   let { doc, history = [] } = $props();
 
@@ -16,16 +20,11 @@
     return () => clearInterval(id);
   });
 
-  const WORD_COLOR = {
-    shaping: 'var(--text-dim)',
-    building: 'var(--accent)',
-    checking: 'var(--warn)',
-    shipping: 'var(--ok)'
-  };
   // card word that holds after each milestone (derived from the latest gate)
   const WORD_AFTER = { created: 'shaping', contract: 'building', presented: 'checking', shipped: 'shipping' };
   const TERMINAL = new Set(['done', 'dropped']);
-  const SIGNAL_KINDS = new Set(['note', 'decision', 'feedback']);
+  const SIGNAL_KINDS = new Set(KIND_ORDER);
+  const KIND_COLOR = { decision: 'var(--k-decision)', feedback: 'var(--k-feedback)', note: 'var(--text)' };
 
   const t = (iso) => new Date(iso).getTime();
 
@@ -66,7 +65,7 @@
 
   const x = (ms) => ((Math.min(Math.max(ms, span.min), span.max) - span.min) / (span.max - span.min)) * width;
 
-  // phase segments between consecutive ticks; the open one runs to now
+  // phase segments between consecutive milestones, for the text chain
   const segments = $derived.by(() => {
     if (!span) return [];
     const out = [];
@@ -104,19 +103,45 @@
     return c;
   });
 
+  // ---- lattice --------------------------------------------------------
+  const CELL = 6, R = 2;                  // grid pitch and dot radius (px)
+  const MAX_ROWS = 8;                     // per side; beyond this a dot is a quantum
+  const cols = $derived(Math.max(1, Math.floor(width / CELL)));
+  const buckets = $derived(span && width ? bucketize(signals, span.min, span.max, cols) : []);
+  const quantum = $derived(quantumFor(buckets, MAX_ROWS));
+  const rows = $derived.by(() => {
+    const r = rowsFor(buckets, quantum);
+    // keep a row on each side so the baseline never sits on an edge
+    return { human: Math.max(1, r.human), agent: Math.max(1, r.agent) };
+  });
+  const bucketMs = $derived(span ? (span.max - span.min) / cols : 0);
+
+  function columnTitle(b) {
+    const n = b.human + b.agent;
+    if (!n) return '';
+    const parts = KIND_ORDER.filter((k) => b.counts[k]).map((k) => {
+      const c = b.counts[k].human + b.counts[k].agent;
+      return `${c} ${k}${c === 1 ? '' : 's'}`;
+    });
+    const from = fmtTs(new Date(b.start).toISOString());
+    return `${from} +${fmtDur(bucketMs)}\n${parts.join(', ')}${b.human ? ` · ${b.human} by the human` : ''}`;
+  }
+
   // ---- layout (px) ------------------------------------------------------
-  const STRIP_Y = 0, STRIP_H = 10;        // signal density strip
-  const BAND_Y = 14, BAND_H = 12;         // phase band
-  const TICK_Y0 = BAND_Y - 3;             // tick line starts just above the band
-  const LABEL_Y = 40, ROW_H = 12;         // first label baseline, row step
+  const TOP = 2;
+  const y0 = $derived(TOP + rows.human * CELL);                 // baseline
+  const lowY = $derived(y0 + rows.agent * CELL);                // bottom of agent dots
   const LABEL_PX = 6.1;                   // ~px per uppercase 10px char
+  const ROW_H = 12;
   const GAP = 8;
+  const labelY = $derived(lowY + 14);     // first label baseline
 
   // tick labels: greedy left-to-right, drop a row on collision
   const ticks = $derived.by(() => {
     if (!span || !width) return [];
-    const items = milestones.map((m) => ({ ...m, label: m.key, cx: x(m.t) }));
-    if (!terminal) items.push({ key: 'now', label: 'now', t: now, cx: width });
+    const snap = (px) => Math.min(cols - 1, Math.floor(px / CELL)) * CELL + CELL / 2;
+    const items = milestones.map((m) => ({ ...m, label: m.key, cx: snap(x(m.t)) }));
+    if (!terminal) items.push({ key: 'now', label: 'now', t: now, cx: snap(width) });
     const rowsRight = [];
     return items.map((it) => {
       const w = it.label.length * LABEL_PX;
@@ -131,74 +156,69 @@
     });
   });
 
-  const rows = $derived(ticks.reduce((n, tk) => Math.max(n, tk.row + 1), 1));
-  const height = $derived(LABEL_Y + (rows - 1) * ROW_H + 4);
+  const labelRows = $derived(ticks.reduce((n, tk) => Math.max(n, tk.row + 1), 1));
+  const height = $derived(labelY + (labelRows - 1) * ROW_H + 4);
 
-  function tickColor(key) {
-    if (key === 'now') return 'var(--accent)';
+  // milestone hue: the human's gates and now in the accent, done in ok, the rest ink
+  function tickColor(key, who) {
+    if (key === 'now' || who?.startsWith('human:')) return 'var(--accent)';
     if (key === 'done') return 'var(--ok)';
     if (key === 'dropped') return 'var(--fail)';
     return 'var(--text-dim)';
-  }
-
-  function segLabel(s) {
-    const px = x(s.end) - x(s.start);
-    const label = fmtDur(s.end - s.start);
-    return px > label.length * LABEL_PX + 10 ? label : '';
   }
 </script>
 
 {#if span}
   <div class="dtl" bind:clientWidth={width} data-testid="dossier-timeline">
     {#if width > 0}
-      <svg {width} {height} aria-label="ticket timeline">
-        <defs>
-          <pattern id="dtl-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
-            <rect width="2.5" height="6" fill="var(--fail)" />
-          </pattern>
-        </defs>
-
-        <!-- signal density: each event a translucent bar; bursts stack darker -->
-        {#each signals as e (e.id)}
-          <rect class="sig" class:human={e.actor_type === 'human'}
-            x={x(t(e.ts)) - 1} y={STRIP_Y} width="2" height={STRIP_H} />
-        {/each}
-
-        <!-- phase band -->
-        <rect x="0" y={BAND_Y} {width} height={BAND_H} class="band-bg" />
-        {#each segments as s}
-          {#if s.word}
-            <rect x={x(s.start)} y={BAND_Y} width={Math.max(x(s.end) - x(s.start), 1)} height={BAND_H}
-              fill={WORD_COLOR[s.word]} class="seg">
-              <title>{s.word}: {s.from} → {s.to}, {fmtDur(s.end - s.start)}</title>
-            </rect>
-            {#if segLabel(s)}
-              <text class="dur" x={(x(s.start) + x(s.end)) / 2} y={BAND_Y + BAND_H - 3} text-anchor="middle">{segLabel(s)}</text>
-            {/if}
-          {/if}
-        {/each}
-        {#each blocked as b}
-          <rect x={x(b.start)} y={BAND_Y} width={Math.max(x(b.end) - x(b.start), 2)} height={BAND_H} fill="url(#dtl-hatch)">
-            <title>blocked on {b.on}: {fmtDur(b.end - b.start)}, from {fmtTs(new Date(b.start).toISOString())}</title>
-          </rect>
-        {/each}
-
-        <!-- milestone ticks -->
+      <svg {width} {height} aria-label="ticket timeline: signals per column, human above the line, agents below">
+        <!-- milestones: dashed annotation lines through the lattice, under the signal dots -->
         {#each ticks as tk (tk.key)}
-          <g class="tick" style:color={tickColor(tk.key)}>
-            <line x1={tk.cx} x2={tk.cx} y1={TICK_Y0} y2={LABEL_Y + tk.row * ROW_H - 9} />
-            <text x={tk.tx} y={LABEL_Y + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label.toUpperCase()}</text>
+          <g class="tick" style:color={tickColor(tk.key, tk.who)}>
+            <line x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
+            <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label.toUpperCase()}</text>
             <title>{tk.label}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
           </g>
+        {/each}
+
+        <!-- baseline, with blocked spans as a run of dots on it -->
+        <line class="base" x1="0" x2={width} y1={y0} y2={y0} />
+        {#each blocked as b}
+          {@const c0 = Math.min(cols - 1, Math.floor(x(b.start) / CELL))}
+          {@const c1 = Math.min(cols - 1, Math.floor(x(b.end) / CELL))}
+          <g class="blocked">
+            {#each { length: c1 - c0 + 1 } as _, i}
+              <circle cx={(c0 + i) * CELL + CELL / 2} cy={y0} r={R} />
+            {/each}
+            <title>blocked on {b.on}: {fmtDur(b.end - b.start)}, from {fmtTs(new Date(b.start).toISOString())}</title>
+          </g>
+        {/each}
+
+        <!-- the lattice: one dot per signal (or per quantum), human up, agent down -->
+        {#each buckets as b (b.i)}
+          {#if b.human + b.agent}
+            {@const cx = b.i * CELL + CELL / 2}
+            <g class="col">
+              {#each stack(b, 'human', quantum) as d, r}
+                <circle cx={cx} cy={y0 - 1 - (r * CELL + CELL / 2)} r={R} fill={KIND_COLOR[d.kind]} class="dot human" />
+              {/each}
+              {#each stack(b, 'agent', quantum) as d, r}
+                <circle cx={cx} cy={y0 + 1 + (r * CELL + CELL / 2)} r={R} fill={KIND_COLOR[d.kind]} class="dot" />
+              {/each}
+              <rect class="hit" x={b.i * CELL} y={TOP} width={CELL} height={lowY - TOP}>
+                <title>{columnTitle(b)}</title>
+              </rect>
+            </g>
+          {/if}
         {/each}
       </svg>
     {/if}
 
     <!-- the numbers, in text, whatever the width -->
     <div class="chain">
-      {#each segments as s, i}
+      {#each segments as s}
         <span class="link" title="{s.from} → {s.to}">
-          {#if s.word}<i style:background={WORD_COLOR[s.word]}></i>{s.word}{:else}{s.from} → {s.to}{/if}
+          {#if s.word}{s.word}{:else}{s.from} → {s.to}{/if}
           <b>{fmtDur(s.end - s.start)}</b>
         </span>
       {/each}
@@ -206,7 +226,10 @@
         <span class="link blocked"><i></i>blocked on {b.on} <b>{fmtDur(b.end - b.start)}</b></span>
       {/each}
       {#if signals.length}
-        <span class="link muted">{Object.entries(counts).map(([k, n]) => `${n} ${k}${n === 1 ? '' : 's'}`).join(', ')}</span>
+        {#each KIND_ORDER.filter((k) => counts[k]) as k (k)}
+          <span class="link muted"><i style:background={KIND_COLOR[k]}></i>{counts[k]} {k}{counts[k] === 1 ? '' : 's'}</span>
+        {/each}
+        <span class="link muted key">human above · agent below{#if quantum > 1} · one dot is {quantum} events{/if}</span>
       {/if}
     </div>
   </div>
@@ -215,15 +238,13 @@
 <style>
   .dtl { margin: 6px 0 8px; }
   svg { display: block; overflow: visible; }
-  .band-bg { fill: var(--bg-inset); }
-  .seg { opacity: 0.8; }
-  .sig { fill: var(--text-dim); opacity: 0.45; }
-  .sig.human { fill: var(--accent); opacity: 0.9; }
-  .dur {
-    font-size: 9px; fill: var(--bg); font-weight: 600;
-    pointer-events: none;
-  }
-  .tick line { stroke: currentColor; stroke-width: 1.5; }
+  .base { stroke: var(--line-strong); stroke-width: 1; }
+  .blocked circle { fill: var(--fail); opacity: 0.85; }
+  .dot { opacity: 0.55; }
+  .dot.human { opacity: 1; }
+  .hit { fill: transparent; }
+  .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
+  .tick line { stroke: currentColor; stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
   .tick text {
     fill: currentColor; font-size: 9px; letter-spacing: 0.06em;
   }
@@ -234,11 +255,10 @@
   .link { white-space: nowrap; }
   .link b { color: var(--text); font-weight: 500; margin-left: 4px; }
   .link i {
-    display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     margin-right: 5px; vertical-align: middle;
   }
   .link.blocked { color: var(--fail); }
-  .link.blocked i {
-    background: repeating-linear-gradient(45deg, var(--fail), var(--fail) 2px, transparent 2px, transparent 4px);
-  }
+  .link.blocked i { background: var(--fail); border-radius: 1px; height: 3px; }
+  .key { font-size: 10px; }
 </style>
