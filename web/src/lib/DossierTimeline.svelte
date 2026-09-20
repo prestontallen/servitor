@@ -4,12 +4,12 @@
   // signal event a dot snapped to a fixed grid, the human's above the
   // line and the agents' below, hue by kind, stacked baseline outward.
   // Milestones are thin dashed annotation lines through the lattice,
-  // blocked spans a run of red dots on the baseline. Labels that would
-  // collide slide apart and get a leader back to their line.
+  // blocked spans a run of red dots on the baseline. A label that would
+  // collide drops a row; its dashed line runs down to meet it.
   // The chain under the drawing prints every duration in text, so the
   // numbers survive any width.
   import { fmtTs } from './state.svelte.js';
-  import { bucketize, quantumFor, stack, rowsFor, placeLabels, KIND_ORDER } from './lattice.js';
+  import { bucketize, quantumFor, stack, rowsFor, stackLabels, KIND_ORDER } from './lattice.js';
 
   let { doc, history = [] } = $props();
 
@@ -132,22 +132,23 @@
   const y0 = $derived(TOP + rows.human * CELL);                 // baseline
   const lowY = $derived(y0 + rows.agent * CELL);                // bottom of agent dots
   const LABEL_PX = 6.1, SIG_PX = 5.2;     // ~px per char: uppercase label, signature
-  const GAP = 10;
-  const labelY = $derived(lowY + 16);     // label baseline
+  const GAP = 10, ROW_H = 11;
+  const labelY = $derived(lowY + 16);     // first label baseline
 
   // the human's approval is the one signature worth showing on the drawing
   const sigOf = (m) => (m.key === 'contract' && m.who?.startsWith('human:') ? ' · ' + m.who.replace(/^\w+:/, '') : '');
 
-  // labels: time order kept, collisions slide apart, a leader joins a moved label to its line
+  // labels: centred on their own line; a collision takes the lowest free row
   const ticks = $derived.by(() => {
     if (!span || !width) return [];
     const snap = (px) => Math.min(cols - 1, Math.floor(px / CELL)) * CELL + CELL / 2;
     const items = milestones.map((m) => ({ ...m, cx: snap(x(m.t)), label: m.key.toUpperCase(), sig: sigOf(m) }));
     if (!terminal) items.push({ key: 'now', label: 'NOW', sig: '', t: now, cx: snap(width) });
-    return placeLabels(items.map((it) => ({ ...it, w: it.label.length * LABEL_PX + it.sig.length * SIG_PX })), width, GAP, CELL / 2);
+    return stackLabels(items.map((it) => ({ ...it, w: it.label.length * LABEL_PX + it.sig.length * SIG_PX })), width, GAP);
   });
 
-  const height = $derived(labelY + 4);
+  const labelRows = $derived(ticks.reduce((n, tk) => Math.max(n, tk.row + 1), 1));
+  const height = $derived(labelY + (labelRows - 1) * ROW_H + 4);
 
   // next gate for an in-flight ticket, from the gates already passed
   const nextGate = $derived.by(() => {
@@ -172,9 +173,8 @@
         <!-- milestones: dashed annotation lines through the lattice, under the signal dots -->
         {#each ticks as tk (tk.key)}
           <g class="tick" style:color={tickColor(tk.key, tk.who)}>
-            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={lowY + 3} />
-            {#if tk.displaced}<line class="lead" x1={tk.cx} x2={tk.lx} y1={lowY + 3} y2={labelY - 9} />{/if}
-            <text x={tk.lx} y={labelY} text-anchor="middle">{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
+            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
+            <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
             <title>{tk.key}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
           </g>
         {/each}
@@ -245,7 +245,6 @@
   .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
   .tick line { stroke: currentColor; stroke-width: 1; opacity: 0.8; }
   .tick line.dash { stroke-dasharray: 2 3; }
-  .tick line.lead { opacity: 0.5; }
   .tick text {
     fill: currentColor; font-size: 9px; letter-spacing: 0.06em;
   }
