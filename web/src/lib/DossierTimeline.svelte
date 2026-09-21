@@ -170,10 +170,14 @@
   <div class="dtl" bind:clientWidth={width} data-testid="dossier-timeline">
     {#if width > 0}
       <svg {width} {height} aria-label="ticket timeline: signals per column, human above the line, agents below">
-        <!-- milestones: dashed annotation lines through the lattice, under the signal dots -->
+        <!-- milestones: dashed annotation lines through the lattice, under the signal dots.
+             Every dash is painted before every label, so a dash that runs down to a
+             lower row passes under the text of the row above, never through it. -->
+        {#each ticks as tk (tk.key)}
+          <line class="dash" style:color={tickColor(tk.key, tk.who)} x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
+        {/each}
         {#each ticks as tk (tk.key)}
           <g class="tick" style:color={tickColor(tk.key, tk.who)}>
-            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
             <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
             <title>{tk.key}{tk.who ? ' by ' + tk.who : ''}: {fmtTs(new Date(tk.t).toISOString())}</title>
           </g>
@@ -243,8 +247,7 @@
   .dot.human { opacity: 1; }
   .hit { fill: transparent; }
   .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
-  .tick line { stroke: currentColor; stroke-width: 1; opacity: 0.8; }
-  .tick line.dash { stroke-dasharray: 2 3; }
+  .dash { stroke: currentColor; stroke-width: 1; opacity: 0.8; stroke-dasharray: 2 3; }
   .tick text {
     fill: currentColor; font-size: 9px; letter-spacing: 0.06em;
   }
