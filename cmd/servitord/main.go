@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +15,42 @@ import (
 	"github.com/prestontallen/servitor/internal/store"
 )
 
+// usage is written to w. Kept short: the daemon takes no flags, and the two
+// things a reader needs are the one subcommand and the environment it reads.
+func usage(w io.Writer) {
+	fmt.Fprint(w, `servitord — the servitor HTTP API daemon.
+
+Usage:
+  servitord                 serve the API (default)
+  servitord apply-schema    create/repair the schema on SERVITOR_DSN, then exit
+  servitord --help          print this and exit
+
+Environment:
+  SERVITOR_DSN     Postgres/TimescaleDB DSN         (default: local servitor DB)
+  SERVITOR_ADDR    listen address                   (default: :8181)
+  SERVITOR_TOKEN   bearer token for the API         (default: off, no auth)
+`)
+}
+
 func main() {
+	// Argument handling comes before anything that opens a socket. Every
+	// argument except apply-schema used to fall through to ListenAndServe, so
+	// `servitord --help` started the daemon instead of describing it — and a
+	// typo like `--hlep` did the same, silently.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--help", "-h", "help":
+			usage(os.Stdout)
+			return
+		case "apply-schema":
+			// handled below
+		default:
+			fmt.Fprintf(os.Stderr, "servitord: unknown argument %q\n\n", os.Args[1])
+			usage(os.Stderr)
+			os.Exit(2)
+		}
+	}
+
 	// servitord apply-schema: create/repair the schema on SERVITOR_DSN, then exit.
 	if len(os.Args) > 1 && os.Args[1] == "apply-schema" {
 		dsn := os.Getenv("SERVITOR_DSN")
