@@ -16,7 +16,10 @@
 #   --no-tone  skip the tone-skill prompt (non-interactive installs)
 #   --dsn URL  write SERVITOR_DSN into ~/.config/servitor/servitord.env
 #              (mode 0600) and run `servitord apply-schema` against it
-#              before restarting. Never committed to the repo.
+#              before restarting. Never committed to the repo. Interactive
+#              first-time installs without --dsn prompt for an existing
+#              db/service host:port, then offer a local docker container,
+#              and warn if no DB ends up configured.
 #   --token T  write SERVITOR_TOKEN into the same env file (API auth).
 set -euo pipefail
 
@@ -142,6 +145,21 @@ restart() {
   echo "servitord active"
 }
 
+API_ADDR="http://localhost:8181"
+
+wait_healthy() {
+  # the unit being active is not the same as the API answering: round-trip
+  # /api/healthz before declaring the install a success
+  echo "==> waiting for API health at ${API_ADDR}/api/healthz"
+  local i
+  for i in $(seq 1 20); do
+    curl -fsS "${API_ADDR}/api/healthz" >/dev/null 2>&1 && { echo "API healthy"; return 0; }
+    sleep 0.5
+  done
+  echo "ERROR: ${API_ADDR}/api/healthz did not answer within 10s; check journalctl --user -u ${UNIT}" >&2
+  exit 1
+}
+
 # env line helpers: write_env_file installs a fresh env file; ensure_env_file
 # creates it only when missing (reruns without --dsn preserve what's there).
 env_value() {
@@ -156,6 +174,57 @@ current_unit_dsn() {
   dsn="$(env_value "Environment=SERVITOR_DSN" "${installed}")"
   [ -n "${dsn}" ] || return 1
   printf '%s\n' "${dsn}"
+}
+
+ask_existing_dsn() {
+  # interactive: point at an existing servitor database via host:port
+  # prompts go to stderr: stdout is captured as the DSN
+  local hp user pass
+  printf "existing servitor database host:port (blank to skip): " >&2
+  read -r hp
+  [ -n "${hp}" ] || return 1
+  printf "database user [servitor]: " >&2
+  read -r user
+  user="${user:-servitor}"
+  printf "database password (blank for trust auth): " >&2
+  read -rs pass
+  echo >&2
+  printf 'postgres://%s:%s@%s/servitor?sslmode=disable' "${user}" "${pass}" "${hp}"
+}
+
+ask_docker_dsn() {
+  # interactive fallback: start a throwaway TimescaleDB container locally
+  # prompts and progress go to stderr: stdout is captured as the DSN
+  local pw answer
+  command -v docker >/dev/null 2>&1 \
+    || { echo "docker not found; cannot start a local container" >&2; return 1; }
+  printf "start a local docker TimescaleDB container instead? [y/N] " >&2
+  read -r answer
+  case "${answer}" in
+    [yY]|[yY][eE][sS]) ;;
+    *) return 1 ;;
+  esac
+  while :; do
+    printf "postgres superuser password for the container: " >&2
+    read -rs pw
+    echo >&2
+    [ -n "${pw}" ] && break
+    echo "a password is required (POSTGRES_PASSWORD has no default)" >&2
+  done
+  echo "==> starting container servitor-db (timescale/timescaledb:latest-pg16)"
+  docker run -d --name servitor-db -p 5432:5432 \
+    -e POSTGRES_PASSWORD="${pw}" -e POSTGRES_DB=servitor \
+    timescale/timescaledb:latest-pg16 >&2 \
+    || { echo "ERROR: docker run failed" >&2; return 1; }
+  echo "==> waiting for postgres inside servitor-db"
+  local i
+  for i in $(seq 1 30); do
+    docker exec servitor-db pg_isready -U postgres >/dev/null 2>&1 && break
+    sleep 1
+  done
+  docker exec servitor-db pg_isready -U postgres >/dev/null 2>&1 \
+    || { echo "ERROR: container postgres never became ready" >&2; return 1; }
+  printf 'postgres://postgres:%s@localhost:5432/servitor?sslmode=disable' "${pw}"
 }
 
 write_env_file() {
@@ -184,7 +253,16 @@ ensure_env_file() {
     dsn="$(env_value SERVITOR_DSN "${ENV_FILE}")"
   elif dsn="$(current_unit_dsn)"; then
     echo "==> migrating existing unit DSN into ${ENV_FILE}"
+  elif [ -t 0 ]; then
+    # fresh interactive install: existing db first, docker fallback, warn
+    dsn="$(ask_existing_dsn || true)"
+    [ -n "${dsn}" ] || dsn="$(ask_docker_dsn || true)"
+    if [ -z "${dsn}" ]; then
+      echo "WARNING: no database configured — falling back to postgres://localhost:5432/servitor?sslmode=disable; servitord will not start without a database there." >&2
+      dsn="postgres://localhost:5432/servitor?sslmode=disable"
+    fi
   else
+    echo "WARNING: no database configured (non-interactive; pass --dsn) — using postgres://localhost:5432/servitor?sslmode=disable." >&2
     dsn="postgres://localhost:5432/servitor?sslmode=disable"
   fi
   if [ -n "${WANT_TOKEN}" ]; then token="${WANT_TOKEN}"
@@ -259,5 +337,6 @@ for s in servitor servitor-dev ticket-flow; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 install_hook
 restart
+wait_healthy
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
