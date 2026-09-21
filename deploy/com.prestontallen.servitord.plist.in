@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd counterpart of deploy/servitord.service. install.sh renders this
+  template into ~/Library/LaunchAgents/, substituting the home-directory
+  placeholder below — launchd does NOT expand $HOME or ~ in plist path keys,
+  so unlike the systemd unit's %h this file cannot be copied verbatim.
+  (The substitution is a plain sed over the file, comments included, so this
+  note avoids spelling the placeholder out.)
+
+  Secrets: launchd has no EnvironmentFile= equivalent. Inlining SERVITOR_DSN
+  into EnvironmentVariables would put the database password into a file that is
+  not mode 0600 and that `launchctl print` echoes back, so the wrapper below
+  sources the same 0600 env file the systemd unit reads.
+
+  SERVITOR_ADDR is assigned AFTER that sourcing on purpose. The systemd unit
+  lists Environment=SERVITOR_ADDR after EnvironmentFile=, so the service
+  manager's address wins there; sourcing the env file last would invert that
+  precedence and make the two platforms disagree.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.prestontallen.servitord</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; [ -f "$HOME/.config/servitor/servitord.env" ] &amp;&amp; . "$HOME/.config/servitor/servitord.env"; SERVITOR_ADDR=0.0.0.0:8181; set +a; exec "$HOME/.local/bin/servitord"</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart=on-failure: relaunch on a non-zero exit, stay down on a clean one. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- There is no journalctl; the log is a file. -->
+  <key>StandardOutPath</key>
+  <string>@HOME@/Library/Logs/servitord.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/Library/Logs/servitord.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>@HOME@</string>
+</dict>
+</plist>
