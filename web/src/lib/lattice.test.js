@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketize, quantumFor, stack, rowsFor, placeLabels, KIND_ORDER } from './lattice.js';
+import { bucketize, quantumFor, stack, rowsFor, stackLabels, KIND_ORDER } from './lattice.js';
 
 const T0 = Date.parse('2026-09-18T00:00:00Z');
 const H = 3600000;
@@ -47,23 +47,18 @@ test('rowsFor reports the tallest column per side', () => {
   assert.deepEqual(rowsFor(b, 1), { human: 1, agent: 2 });
 });
 
-test('placeLabels keeps order, spreads collisions and marks displaced labels', () => {
+test('stackLabels keeps a label on its line and drops colliding ones a row', () => {
   const w = 40;
-  const out = placeLabels([{ cx: 20, w }, { cx: 200, w }, { cx: 396, w }, { cx: 398, w }, { cx: 399, w }], 400, 10);
-  assert.equal(out[0].lx, 20);                       // fits where it is
-  assert.equal(out[0].displaced, false);
-  assert.equal(out[1].displaced, false);
-  // the three at the right edge fan out leftwards from the edge, in order, gap kept
-  assert.equal(out[4].left + out[4].w, 400);
-  assert.equal(out[3].left + out[3].w + 10, out[4].left);
-  assert.equal(out[2].left + out[2].w + 10, out[3].left);
-  assert.ok(out[2].displaced && out[3].displaced);
-  assert.ok(out.every((it, i) => i === 0 || it.left >= out[i - 1].left + out[i - 1].w + 10));
+  // created far left, contract mid, then three on one pixel at the right edge
+  const out = stackLabels([{ cx: 20, w }, { cx: 400, w }, { cx: 858, w }, { cx: 859, w }, { cx: 860, w }], 860, 10);
+  assert.deepEqual(out.map((o) => o.row), [0, 0, 0, 1, 2]);
+  assert.deepEqual(out.map((o) => o.tx), [20, 400, 860, 860, 860]);
+  assert.deepEqual(out.map((o) => o.anchor), ['middle', 'middle', 'end', 'end', 'end']);
 });
 
-test('placeLabels clamps a lone label inside the width', () => {
-  const [a] = placeLabels([{ cx: 0, w: 30 }], 200);
-  assert.equal(a.left, 0);
-  const [b] = placeLabels([{ cx: 200, w: 30 }], 200);
-  assert.equal(b.left, 170);
+test('stackLabels clamps edge labels without moving them off their line', () => {
+  const [a] = stackLabels([{ cx: 0, w: 30 }], 200);
+  assert.deepEqual([a.row, a.tx, a.anchor], [0, 0, 'start']);
+  const [b] = stackLabels([{ cx: 200, w: 30 }], 200);
+  assert.deepEqual([b.row, b.tx, b.anchor], [0, 200, 'end']);
 });
