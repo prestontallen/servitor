@@ -92,10 +92,14 @@
           <rect class="highlight" x={x(highlight.from)} y={TOP} width={Math.max(x(highlight.to) - x(highlight.from), 2)} height={lowY - TOP} />
         {/if}
 
-        <!-- ticks: dashed annotation lines through the lattice, under the dots -->
+        <!-- ticks: dashed annotation lines through the lattice, under the dots.
+             Every dash is painted before every label, so a dash that runs down to a
+             lower row passes under the text of the row above, never through it. -->
+        {#each placed as tk (tk.key)}
+          <line class="dash" style:color={tk.color || 'var(--text-dim)'} x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
+        {/each}
         {#each placed as tk (tk.key)}
           <g class="tick" style:color={tk.color || 'var(--text-dim)'}>
-            <line class="dash" x1={tk.cx} x2={tk.cx} y1={TOP} y2={labelY + tk.row * ROW_H - 9} />
             <text x={tk.tx} y={labelY + tk.row * ROW_H} text-anchor={tk.anchor}>{tk.label}<tspan class="sig">{tk.sig}</tspan></text>
             {#if tk.title}<title>{tk.title}</title>{/if}
           </g>
@@ -147,8 +151,7 @@
   .dot.human { opacity: 1; }
   .hit { fill: transparent; }
   .col:hover .hit { fill: var(--text); fill-opacity: 0.07; }
-  .tick line { stroke: currentColor; stroke-width: 1; opacity: 0.8; }
-  .tick line.dash { stroke-dasharray: 2 3; }
+  .dash { stroke: currentColor; stroke-width: 1; opacity: 0.8; stroke-dasharray: 2 3; }
   .tick text { fill: currentColor; font-size: 9px; letter-spacing: 0.06em; }
   .tick .sig { fill: var(--text-dim); letter-spacing: 0; }
 </style>

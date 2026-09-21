@@ -87,7 +87,8 @@ export function rowsFor(buckets, quantum) {
 // milestone labels along a width: each stays centred on its own line
 // (clamped inside the edges); one that would touch an earlier label takes
 // the lowest free row, so coincident labels pile straight down. Items are
-// {cx, w}; the result adds row, tx and anchor.
+// {cx, w} and must arrive in nondecreasing cx order (time order), since
+// each row only remembers its right edge; the result adds row, tx and anchor.
 export function stackLabels(items, width, gap = 10) {
   const rowsRight = [];
   return items.map((it) => {
