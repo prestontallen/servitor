@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketize, quantumFor, stack, rowsFor, stackLabels, KIND_ORDER } from './lattice.js';
+import { bucketize, quantumFor, stack, rowsFor, stackLabels, fromActorBuckets, KIND_ORDER } from './lattice.js';
 
 const T0 = Date.parse('2026-09-18T00:00:00Z');
 const H = 3600000;
@@ -33,7 +33,7 @@ test('stack orders kinds baseline outward and rounds over the side, not per kind
   const agent = stack(b[0], 'agent', 2);
   assert.deepEqual(agent.map((d) => d.kind), ['decision', 'note']);
   assert.deepEqual(stack(b[0], 'human', 2), [{ kind: 'feedback' }]);
-  assert.deepEqual(KIND_ORDER, ['decision', 'feedback', 'note']);
+  assert.deepEqual(KIND_ORDER, ['decision', 'feedback', 'note', 'event']);
 });
 
 test('a side draws exactly ceil(total / quantum) dots whatever the kind mix', () => {
@@ -61,4 +61,18 @@ test('stackLabels clamps edge labels without moving them off their line', () => 
   assert.deepEqual([a.row, a.tx, a.anchor], [0, 0, 'start']);
   const [b] = stackLabels([{ cx: 200, w: 30 }], 200);
   assert.deepEqual([b.row, b.tx, b.anchor], [0, 200, 'end']);
+});
+
+test('fromActorBuckets folds hourly actor counts into columns, system on the agent side', () => {
+  const hours = [
+    { hour: new Date(T0 + 1 * H).toISOString(), by_actor: { agent: 3, human: 1 } },
+    { hour: new Date(T0 + 2 * H).toISOString(), by_actor: { system: 2 } },
+    { hour: new Date(T0 + 9 * H).toISOString(), by_actor: { human: 4 } },
+    { hour: new Date(T0 + 30 * H).toISOString(), by_actor: { agent: 9 } } // outside the span
+  ];
+  const b = fromActorBuckets(hours, T0, T0 + 10 * H, 5); // two hours per column
+  assert.deepEqual([b[0].human, b[0].agent], [1, 3]);
+  assert.deepEqual(b[1].counts, { event: { human: 0, agent: 2 } }); // system counts on the agent side
+  assert.deepEqual([b[4].human, b[4].agent], [4, 0]);
+  assert.equal(b.reduce((n, x) => n + x.human + x.agent, 0), 10);
 });
