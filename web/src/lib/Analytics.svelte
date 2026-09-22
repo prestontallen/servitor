@@ -1,24 +1,19 @@
 <script>
-  import * as echarts from 'echarts/core';
-  import { BarChart } from 'echarts/charts';
-  import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
-  import { CanvasRenderer } from 'echarts/renderers';
+  // Analytics: the ledger drawn as the dot lattice (one dot per event,
+  // stacked by kind) and handoff latency as text. There is exactly one
+  // chart library in the GUI — the dotlattice package.
   import { get } from './api.svelte.js';
   import { live } from './live.svelte.js';
-
-  echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+  import DotLattice from './DotLattice.svelte';
+  import { KIND_ORDER, KIND_COLOR } from './timeview.js';
 
   let days = $state(30);
   let buckets = $state([]);
   let error = $state(null);
-  let el = $state(null); // bind:this
-  let chart = null;
 
   // handoff latency
   let handoffs = $state([]);
   let handoffError = $state(null);
-  let handoffEl = $state(null);
-  let handoffChart = null;
 
   function fmtDur(secs) {
     if (secs == null) return '—';
@@ -45,29 +40,31 @@
       .catch((e) => (handoffError = e.message));
   });
 
-  $effect(() => {
-    if (!el) return;
-    chart = chart || echarts.init(el);
-    renderChart();
-    return () => {
-      chart?.dispose();
-      chart = null;
-    };
+  // ---- the lattice ---------------------------------------------------------
+  // daily {day, by_kind} buckets expanded into package events; kinds without
+  // a dedicated hue (gates, status changes) draw in palette/ink colors.
+  const events = $derived.by(() => {
+    const out = [];
+    for (const b of buckets) {
+      const t = Date.parse(b.day);
+      for (const [kind, n] of Object.entries(b.by_kind || {})) {
+        for (let i = 0; i < n; i++) out.push({ t, group: kind, side: 'up' });
+      }
+    }
+    return out;
   });
-
-  $effect(() => {
-    if (!handoffEl) return;
-    handoffChart = handoffChart || echarts.init(handoffEl);
-    renderHandoffChart();
-    return () => {
-      handoffChart?.dispose();
-      handoffChart = null;
-    };
+  const groups = KIND_ORDER.map((k) => ({ name: k, color: KIND_COLOR[k] }));
+  const kindCounts = $derived.by(() => {
+    const c = {};
+    for (const e of events) c[e.group] = (c[e.group] || 0) + 1;
+    return c;
   });
+  const total = $derived(events.length);
 
+  // ---- weekly handoff waits (text, not a chart) ----------------------------
   // weekly average of each wait, keyed on the week the wait ENDED
   // (human waits: week of presented; agent waits: week of approval).
-  function weeklyWaits() {
+  const weeklyWaits = $derived.by(() => {
     const wk = (ts) => {
       const d = new Date(ts);
       const day = (d.getUTCDay() + 6) % 7; // monday-start
@@ -87,68 +84,8 @@
     }
     const weeks = Object.keys(acc).sort();
     const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-    return { weeks, human: weeks.map((w) => avg(acc[w].h)), agent: weeks.map((w) => avg(acc[w].a)) };
-  }
-
-  function baseChartOpts() {
-    const css = getComputedStyle(document.documentElement);
-    return {
-      color: ['--accent', '--accent-dim', '--ok', '--warn', '--text-dim', '--fail'].map(
-        (v) => css.getPropertyValue(v).trim() || '#b08d57'
-      ),
-      textStyle: { color: css.getPropertyValue('--text').trim(), fontFamily: 'monospace', fontSize: 11 },
-      tooltip: { trigger: 'axis' },
-      legend: { textStyle: { color: css.getPropertyValue('--text-dim').trim() } },
-      grid: { left: 48, right: 12, top: 30, bottom: 24 }
-    };
-  }
-
-  function renderChart() {
-    if (!chart) return;
-    const css = getComputedStyle(document.documentElement);
-    const kinds = [...new Set(buckets.flatMap((b) => Object.keys(b.by_kind || {})))];
-    chart.setOption({
-      ...baseChartOpts(),
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      legend: { data: kinds, textStyle: { color: css.getPropertyValue('--text-dim').trim() } },
-      grid: { left: 40, right: 12, top: 30, bottom: 24 },
-      xAxis: {
-        type: 'category',
-        data: buckets.map((b) => b.day),
-        axisLine: { lineStyle: { color: css.getPropertyValue('--line-strong').trim() } }
-      },
-      yAxis: { type: 'value', splitLine: { lineStyle: { color: css.getPropertyValue('--line').trim() } } },
-      series: kinds.map((k) => ({
-        name: k,
-        type: 'bar',
-        stack: 'events',
-        data: buckets.map((b) => (b.by_kind && b.by_kind[k]) || 0),
-        barMaxWidth: 18
-      }))
-    });
-  }
-
-  function renderHandoffChart() {
-    if (!handoffChart) return;
-    const { weeks, human, agent } = weeklyWaits();
-    if (weeks.length === 0) return;
-    handoffChart.setOption({
-      ...baseChartOpts(),
-      tooltip: { ...baseChartOpts().tooltip, valueFormatter: (v) => fmtDur(v) },
-      legend: { data: ['waiting on human', 'waiting on agent'], ...baseChartOpts().legend },
-      xAxis: { type: 'category', data: weeks, name: 'week of' },
-      yAxis: {
-        type: 'value',
-        name: 'avg wait',
-        axisLabel: { formatter: (v) => fmtDur(v) },
-        splitLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue('--line').trim() } }
-      },
-      series: [
-        { name: 'waiting on human', type: 'bar', data: human, barMaxWidth: 18 },
-        { name: 'waiting on agent', type: 'bar', data: agent, barMaxWidth: 18 }
-      ]
-    });
-  }
+    return weeks.map((w) => ({ week: w, human: avg(acc[w].h), agent: avg(acc[w].a) }));
+  });
 </script>
 
 <section class="panel analytics">
@@ -164,8 +101,15 @@
     <p class="muted">unreachable: {error}</p>
   {:else if buckets.length === 0}
     <p class="muted">no activity in range</p>
+  {:else}
+    <DotLattice {events} {groups} autoAxis="day" maxRows={14} label="ledger events per day, stacked by kind" />
+    <div class="chain">
+      <span class="link">{total} event{total === 1 ? '' : 's'} over {days} days</span>
+      {#each Object.keys(kindCounts) as k (k)}
+        <span class="link muted"><i style:background={KIND_COLOR[k] ?? 'var(--text-dim)'}></i>{kindCounts[k]} {k}{kindCounts[k] === 1 ? '' : 's'}</span>
+      {/each}
+    </div>
   {/if}
-  <div class="chart" bind:this={el}></div>
 </section>
 
 <section class="panel analytics">
@@ -174,9 +118,12 @@
     <p class="muted">unreachable: {handoffError}</p>
   {:else if handoffs.length === 0}
     <p class="muted">no presented tickets yet</p>
-  {/if}
-  {#if handoffs.length > 0}
-    <div class="chart short" bind:this={handoffEl}></div>
+  {:else}
+    <div class="chain weeks">
+      {#each weeklyWaits as w (w.week)}
+        <span class="link">{w.week.slice(5)}<b>human {fmtDur(w.human)} · agent {fmtDur(w.agent)}</b></span>
+      {/each}
+    </div>
     <div class="rows" role="table" aria-label="handoff latency per ticket">
       {#each handoffs.slice(0, 30) as r (r.ulid)}
         <a class="row" href={`#/ticket/${r.ulid}`}>
@@ -195,8 +142,17 @@
   .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
   h2 { margin: 0; font-size: 15px; }
   .range { display: flex; gap: 4px; }
-  .chart { width: 100%; height: 380px; }
-  .chart.short { height: 240px; margin-bottom: 10px; }
+  .chain {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .chain.weeks { margin: 0 0 10px; }
+  .link { white-space: nowrap; }
+  .link b { color: var(--text); font-weight: 500; margin-left: 4px; }
+  .link i {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle;
+  }
   .rows { display: flex; flex-direction: column; }
   .row {
     display: grid;

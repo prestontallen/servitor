@@ -8,8 +8,15 @@
   import { get } from './api.svelte.js';
   import { board, openTicket } from './state.svelte.js';
   import DotLattice from './DotLattice.svelte';
-  import { fromActorBuckets } from './lattice.js';
+  import { KIND_ORDER, KIND_COLOR, eventsFromHours } from './timeview.js';
   import { parseTimeHash, timeHash, flowLanes, cadenceDays, dayKey, daysIn, fmtDur } from './timeview.js';
+
+  // side + hue config shared by both lattices: human above, agent below
+  const LATTICE = {
+    groups: KIND_ORDER.map((k) => ({ name: k, color: KIND_COLOR[k] })),
+    sides: { human: 'up', agent: 'down' },
+    sideOpacity: { human: 1, agent: 0.55 },
+  };
 
   const OUTER_DAYS = 30;
   const DAY = 86400000, HOUR = 3600000;
@@ -56,8 +63,8 @@
   // ---- spans, buckets, axes ----------------------------------------------
   const outerSpan = $derived(outer.until ? { min: outer.since, max: outer.until } : null);
   const windowSpan = $derived(to ? { min: from, max: to } : null);
-  const cadenceBuckets = (cols) => fromActorBuckets(outer.buckets, outerSpan.min, outerSpan.max, cols);
-  const windowBuckets = (cols) => fromActorBuckets(inner.buckets, from, to, cols);
+  const outerEvents = $derived(outer.buckets.length ? eventsFromHours(outer.buckets) : []);
+  const windowEvents = $derived(inner.buckets.length ? eventsFromHours(inner.buckets) : []);
 
   const dayLabel = (ms) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase();
   const hourLabel = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -166,7 +173,7 @@
       <h3>cadence · {OUTER_DAYS} days · drag to choose the window, click a day to pin it</h3>
       {#if outerSpan}
         <div class="brushwrap">
-          <DotLattice span={outerSpan} bucketsFor={cadenceBuckets} axis={cadenceAxis} {highlight} maxRows={16} bind:quantum={cadenceQuantum} label="ledger events per column over thirty days, human above the line, agents below" />
+          <DotLattice span={outerSpan} events={outerEvents} {...LATTICE} axis={cadenceAxis} {highlight} maxRows={16} bind:quantum={cadenceQuantum} label="ledger events per column over thirty days, human above the line, agents below" />
           <div class="cap" bind:this={capEl} onpointerdown={brushDown} onpointermove={brushMove} onpointerup={brushUp} onpointercancel={brushUp} data-testid="cadence-brush"></div>
         </div>
         <div class="chain">
@@ -184,7 +191,7 @@
       {#if inner.error}
         <p class="muted">unreachable: {inner.error}</p>
       {:else if windowSpan}
-        <DotLattice span={windowSpan} bucketsFor={windowBuckets} axis={windowAxis} maxRows={14} bind:quantum={windowQuantum} label="ledger events per column in the window, human above the line, agents below" />
+        <DotLattice span={windowSpan} events={windowEvents} {...LATTICE} axis={windowAxis} maxRows={14} bind:quantum={windowQuantum} label="ledger events per column in the window, human above the line, agents below" />
         <div class="chain">
           <span class="link">{windowTotal} event{windowTotal === 1 ? '' : 's'}<b>{windowHuman} by the human</b></span>
           <span class="link muted key">human above · agent below{#if windowQuantum > 1} · one dot is {windowQuantum} events{/if}</span>

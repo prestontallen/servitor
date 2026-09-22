@@ -5,6 +5,28 @@
 
 const DAY = 86400000;
 
+// ---- ledger kinds (drawing order and hues for the lattice) -----------------
+// 'event' is the kind of a count that arrives without one (the timeline
+// endpoint's actor buckets); it draws in ink like a note.
+export const KIND_ORDER = ['decision', 'feedback', 'note', 'event'];
+export const KIND_COLOR = { decision: 'var(--k-decision)', feedback: 'var(--k-feedback)', note: 'var(--text)', event: 'var(--text)' };
+
+// the timeline endpoint's hourly {hour, by_actor} buckets expanded into
+// package events {t, group, side}: every count is kind 'event', human on
+// the human side, agent and system on the agent side.
+export function eventsFromHours(hours) {
+  const out = [];
+  for (const h of hours) {
+    const t = new Date(h.hour).getTime();
+    for (const [actor, n] of Object.entries(h.by_actor || {})) {
+      const who = actor === 'human' ? 'human' : 'agent';
+      for (let i = 0; i < n; i++) out.push({ t, group: 'event', side: who });
+    }
+  }
+  return out;
+}
+
+
 const t = (iso) => new Date(iso).getTime();
 
 // ---- window <-> hash ------------------------------------------------------
