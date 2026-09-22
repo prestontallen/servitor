@@ -9,15 +9,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/prestontallen/servitor/internal/testdb"
 )
 
-// Tests run against a throwaway database on the local timescaledb container.
-// Override with SERVITOR_TEST_DSN when needed.
-const adminDSN = "postgres://postgres:psql@localhost:5432/postgres?sslmode=disable"
+// Tests run against throwaway databases created through the superuser DSN in
+// SERVITOR_TEST_ADMIN_DSN (unset skips). Override the test database itself
+// with SERVITOR_TEST_DSN when needed.
 
 func testDB(t *testing.T) *Store {
 	t.Helper()
 	ctx := context.Background()
+	adminDSN := testdb.AdminDSN(t)
 	admin, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
 		t.Skipf("postgres not reachable: %v", err)
@@ -33,7 +36,7 @@ func testDB(t *testing.T) *Store {
 	}
 	dsn := os.Getenv("SERVITOR_TEST_DSN")
 	if dsn == "" {
-		dsn = "postgres://postgres:psql@localhost:5432/servitor_test?sslmode=disable"
+		dsn = testdb.Named(t, adminDSN, "servitor_test")
 	}
 	s, err := Open(ctx, dsn)
 	if err != nil {
@@ -319,6 +322,7 @@ func TestApplySchemaIdempotent(t *testing.T) {
 
 func TestApplySchemaBaselineStamp(t *testing.T) {
 	ctx := context.Background()
+	adminDSN := testdb.AdminDSN(t)
 	admin, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
 		t.Skipf("postgres not reachable: %v", err)
@@ -332,7 +336,7 @@ func TestApplySchemaBaselineStamp(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	dsn := strings.Replace(adminDSN, "/postgres?", "/servitor_test_legacy?", 1)
+	dsn := testdb.Named(t, adminDSN, "servitor_test_legacy")
 	s, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
