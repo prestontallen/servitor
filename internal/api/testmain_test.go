@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/prestontallen/servitor/internal/store"
+	"github.com/prestontallen/servitor/internal/testdb"
 )
 
 // storeForTest provisions a throwaway database per test, mirroring the
@@ -14,7 +15,8 @@ import (
 func storeForTest(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, "postgres://postgres:psql@localhost:5432/postgres?sslmode=disable")
+	adminDSN := testdb.AdminDSN(t)
+	admin, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
 		t.Skipf("postgres not reachable: %v", err)
 	}
@@ -29,7 +31,7 @@ func storeForTest(t *testing.T) *store.Store {
 	}
 	dsn := os.Getenv("SERVITOR_TEST_DSN")
 	if dsn == "" {
-		dsn = "postgres://postgres:psql@localhost:5432/servitor_api_test?sslmode=disable"
+		dsn = testdb.Named(t, adminDSN, "servitor_api_test")
 	}
 	s, err := store.Open(ctx, dsn)
 	if err != nil {
