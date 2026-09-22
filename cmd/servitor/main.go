@@ -200,9 +200,9 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		return 0
 
 	case "subitem":
-		// servitor subitem <ref> <prefix> [--body B] [--state S] [--rank N]
+		// servitor subitem <ref> <prefix> [--body B] [--state S] [--evidence E] [--rank N]
 		if len(args) < 2 {
-			say("subitem: need <ref> <prefix> and at least one of --body/--state/--rank")
+			say("subitem: need <ref> <prefix> and at least one of --body/--state/--evidence/--rank")
 			return 2
 		}
 		ref, prefix := args[0], args[1]
@@ -220,6 +220,10 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			case "--state":
 				setP = ensure(setP)
 				setP["state"] = args[i+1]
+			case "--evidence":
+				// how a criterion was proven; rides in subitems.fields
+				setP = ensure(setP)
+				setP["evidence"] = args[i+1]
 			case "--rank":
 				n, err := strconv.Atoi(args[i+1])
 				if err != nil {

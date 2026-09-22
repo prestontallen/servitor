@@ -58,7 +58,16 @@ servitor gate <ref> <contract_approved|presented|shipped>
 servitor history <ref>                 full event timeline
 servitor feedback [--since DATE] [--source human|self] [--limit N]
                                        feedback events across all tickets
+servitor add <ref> criterion|plan|question <text>   -> subitem
+servitor subitem <ref> <prefix> --state pass|fail --evidence "<how proven>"
+servitor log <ref> contract '{"intent":..,"in":[..],"out":[..],"verification":..,"risks":..}'
+servitor log <ref> review   '{"verdict":"present|hold","summary":..,"findings":[..]}'
 ```
+
+`contract` and `review` are structured events the GUI cards read directly;
+their shapes are in [references/events.md](references/events.md). Write
+those, not `Contract:` prose, so the Contract and Review cards are the
+record and not a convention parsed out of a note.
 
 - `ref` is a ULID or slug, case-insensitive.
 - `set` maps flags to events: `--status active`, `--status blocked --on human`,

@@ -8,7 +8,8 @@
 //   intervals  — questions (asked .. answered), plan steps (added .. done)
 //   points     — decisions, feedback, corrections, gates
 //
-// Structured sources (subitems, decision/feedback events, gates) come
+// Structured sources (contract/review events, subitems, decision/feedback
+// events, gates; shapes in skills/servitor/references/events.md) come
 // first; when a ticket only has notes, the conventions agents already use
 // fill the instrument instead, and the record says so in `source`:
 //   "Intake: ..." / "INTAKE (tier 2, ...): ..." / "Contract ...: ..." -> contract
@@ -67,19 +68,26 @@ export function contract(doc, history, ns) {
   const sets = history.filter((e) => e.kind === 'subitem.set').sort(byId);
   const criteria = (doc.criteria || []).map((c) => {
     const state = c.state === 'pass' || c.state === 'fail' ? c.state : 'open';
-    // evidence: the subitem.set that put it in pass/fail
+    // evidence: the subitem.set that put it in pass/fail, plus the text it carried
     const ev = sets.filter((e) => e.payload?.ulid && c.ulid?.startsWith(e.payload.ulid) && (e.payload.state === 'pass' || e.payload.state === 'fail')).pop();
-    return { body: c.body, state, evidence: ev ? { actor: ev.actor, ts: ev.ts, id: ev.id } : null };
+    const text = c.evidence || ev?.payload?.evidence || null;
+    return { body: c.body, state, evidence: ev || text ? { actor: ev?.actor || null, ts: ev?.ts || null, id: ev?.id || null, text } : null };
   });
   const prose = ns.filter((n) => INTAKE.test(n.body) || CONTRACT.test(n.body));
   const intake = prose.find((n) => INTAKE.test(n.body)) || null;
   const contractNotes = prose.filter((n) => CONTRACT.test(n.body));
-  // the newest contract note is the document; older ones are versions
+  // the newest contract event is the document; contract notes are the
+  // fallback for tickets that predate the event
+  const events = history.filter((e) => e.kind === 'contract').sort(byId);
+  const cev = events[events.length - 1] || null;
   const docNote = contractNotes[contractNotes.length - 1] || null;
-  const sections = docNote ? splitContract(strip(docNote.body, CONTRACT)) : intake ? splitContract(strip(intake.body, INTAKE)) : null;
+  const sections = cev
+    ? { intent: cev.payload?.intent || null, in: cev.payload?.in || [], out: cev.payload?.out || [], verification: cev.payload?.verification || null, risks: cev.payload?.risks || null }
+    : docNote ? splitContract(strip(docNote.body, CONTRACT)) : intake ? splitContract(strip(intake.body, INTAKE)) : null;
   const sources = [];
   if (criteria.length) sources.push('criteria subitems');
-  if (docNote) sources.push('contract note');
+  if (cev) sources.push('contract event');
+  else if (docNote) sources.push('contract note');
   else if (intake) sources.push('intake note');
   if (!sources.length && !approved) return null;
   const tier = intake?.body.match(/tier\s*(\d)/i)?.[1] || null;
@@ -102,8 +110,8 @@ export function contract(doc, history, ns) {
     criteria,
     tally,
     amendments,
-    versions: contractNotes.length,
-    fed: [intake?.id, ...contractNotes.map((n) => n.id)].filter(Boolean)
+    versions: cev ? events.length : contractNotes.length,
+    fed: [intake?.id, ...(cev ? [] : contractNotes.map((n) => n.id))].filter(Boolean)
   };
 }
 
