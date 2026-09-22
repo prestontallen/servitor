@@ -115,3 +115,42 @@ test('no structure and no conventions means an empty dossier with counts', () =>
   assert.equal(d.empty, true);
   assert.deepEqual(d.counts, [['ticket.create', 1], ['status.set', 1], ['note', 1]]);
 });
+
+// ---- plan/review events (skills/servitor/references/events.md) ----------------
+
+test('a contract event is the document ahead of contract notes, and counts its versions', () => {
+  const h = [
+    note('Intake: tier 2, complexity medium. Old way.'),
+    note('Contract: Intent: from a note. In: a. Out: b.'),
+    ev('contract', { intent: 'v1', in: ['a'], out: ['b'], verification: 'staging', risks: 'none' }),
+    ev('contract', { intent: 'v2', in: ['a', 'c'], out: ['b'] }, { actor: 'agent:claude' })
+  ];
+  const c = buildDossier(bare, h).contract;
+  assert.equal(c.source, 'contract event');
+  assert.equal(c.intent, 'v2');
+  assert.deepEqual(c.in, ['a', 'c']);
+  assert.deepEqual(c.out, ['b']);
+  assert.equal(c.verification, null);
+  assert.equal(c.versions, 2);
+  assert.equal(c.tier, '2');
+  // the contract note is not consumed when the event is the document
+  assert.equal(c.fed.length, 1);
+});
+
+test('criterion evidence text comes from ctx or from the subitem.set that proved it', () => {
+  const doc = { ...bare, criteria: [
+    { ulid: '01AAAAAAAAAAAAAAAAAAAAAAAA', body: 'A', state: 'pass', evidence: 'go test -run A' },
+    { ulid: '01BBBBBBBBBBBBBBBBBBBBBBBB', body: 'B', state: 'fail', evidence: null },
+    { ulid: '01CCCCCCCCCCCCCCCCCCCCCCCC', body: 'C', state: null, evidence: null }
+  ] };
+  const h = [
+    ev('subitem.set', { ulid: '01AAAA', state: 'pass', evidence: 'go test -run A' }, { actor: 'agent:claude' }),
+    ev('subitem.set', { ulid: '01BBBB', state: 'fail', evidence: 'board shows no mark' }, { actor: 'agent:hermes' })
+  ];
+  const c = buildDossier(doc, h).contract;
+  assert.equal(c.criteria[0].evidence.text, 'go test -run A');
+  assert.equal(c.criteria[0].evidence.actor, 'agent:claude');
+  assert.equal(c.criteria[1].evidence.text, 'board shows no mark');
+  assert.equal(c.criteria[2].evidence, null);
+  assert.deepEqual(c.tally, { pass: 1, fail: 1, open: 1 });
+});

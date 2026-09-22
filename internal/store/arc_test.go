@@ -134,7 +134,7 @@ func TestParentGuards(t *testing.T) {
 
 func TestEventClassMap(t *testing.T) {
 	// contract: every known kind classified; unknown kinds are transitions
-	signals := map[string]bool{"note": true, "decision": true, "gate": true, "feedback": true}
+	signals := map[string]bool{"note": true, "decision": true, "gate": true, "feedback": true, "contract": true, "review": true}
 	for _, k := range []string{"ticket.create", "status.set", "field.set",
 		"subitem.add", "subitem.set", "subitem.rank", "hook", "made_up_kind"} {
 		if EventClass(k) != "transition" {

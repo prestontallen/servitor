@@ -195,7 +195,7 @@
                 <li class="st-{cr.state}">
                   <span class="box">{cr.state === 'pass' ? '✓' : cr.state === 'fail' ? '✕' : ''}</span>
                   <span class="crbody">{cr.body}</span>
-                  {#if cr.evidence}<span class="evidence">← proven by {short(cr.evidence.actor)} {relTs(cr.evidence.ts)}</span>{/if}
+                  {#if cr.evidence}<span class="evidence">← {#if cr.evidence.actor}proven by {short(cr.evidence.actor)} {relTs(cr.evidence.ts)}{:else}proven{/if}{#if cr.evidence.text}: <i>{cr.evidence.text}</i>{/if}</span>{/if}
                 </li>
               {/each}
             </ul>
@@ -215,6 +215,11 @@
             {/each}
           </div>
         {/if}
+      </section>
+    {:else}
+      <section class="panel inst contract empty">
+        <h3>Contract</h3>
+        <div class="src">none yet · servitor.plan fills this</div>
       </section>
     {/if}
 
@@ -236,6 +241,11 @@
             </li>
           {/each}
         </ol>
+      </section>
+    {:else}
+      <section class="panel inst plan empty">
+        <h3>Plan</h3>
+        <div class="src">none yet · servitor.plan fills this</div>
       </section>
     {/if}
 
@@ -477,6 +487,10 @@
   .sbody { flex: 1; }
   .smeta { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
   .track li.now .smeta { color: var(--accent); }
+
+  /* reserved space: the card is there before its skill has run */
+  .inst.empty { border-left-style: dashed; opacity: 0.75; }
+  .inst.empty h3 { margin-bottom: 2px; }
 
   /* ---- decisions: forks ---- */
   .decisions { border-left: 4px solid var(--warn); }

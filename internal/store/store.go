@@ -294,7 +294,7 @@ func (s *Store) AppendEvent(ctx context.Context, e Event, expectUpdated time.Tim
 // definition. Views group and weight by class.
 func EventClass(kind string) string {
 	switch kind {
-	case "note", "decision", "gate", "feedback":
+	case "note", "decision", "gate", "feedback", "contract", "review":
 		return "signal"
 	default:
 		return "transition"
@@ -483,13 +483,16 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 		if err != nil {
 			return err
 		}
+		// evidence (how a criterion was proven) rides in fields so the
+		// card can print it beside the check; see references/events.md.
 		_, err = tx.Exec(ctx,
 			`UPDATE subitems SET
 			   body = CASE WHEN $3::jsonb ? 'body'  THEN $4 ELSE body END,
 			   state = CASE WHEN $3::jsonb ? 'state' THEN $5 ELSE state END,
+			   fields = CASE WHEN $3::jsonb ? 'evidence' THEN fields || jsonb_build_object('evidence', $7::text) ELSE fields END,
 			   updated_at = $6
 			 WHERE ulid = $2 AND ticket_ulid = $1`,
-			e.TicketULID, sub, mustJSON(p), strField(p, "body"), strField(p, "state"), ts)
+			e.TicketULID, sub, mustJSON(p), strField(p, "body"), strField(p, "state"), ts, strField(p, "evidence"))
 		return err
 
 	case "subitem.rank":
@@ -522,6 +525,23 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			 VALUES ($1,$2,'note',$3,$4,$5,$5)`,
 			NewULID(), e.TicketULID, ts.UnixMilli(), v, ts)
 		return err
+
+	case "contract":
+		// ledger-only document; the read side takes the latest one.
+		// Shape: references/events.md.
+		if strField(p, "intent") == "" {
+			return errors.New("contract requires intent")
+		}
+		return nil
+
+	case "review":
+		// ledger-only verdict, one event per run; latest wins on read.
+		switch strField(p, "verdict") {
+		case "present", "hold":
+		default:
+			return errors.New(`review requires verdict "present" or "hold"`)
+		}
+		return nil
 
 	default:
 		// unknown kinds are ledger-only, verbatim (invariant 4)

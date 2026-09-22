@@ -80,6 +80,10 @@ type Card struct {
 	// agent does not start a card active under another actor.
 	ActiveBy    *string    `json:"active_by"`
 	ActiveSince *time.Time `json:"active_since"`
+	// CriteriaPass/CriteriaTotal is the board's plan mark
+	// (references/events.md): criteria passed over criteria written.
+	CriteriaPass  int64 `json:"criteria_pass"`
+	CriteriaTotal int64 `json:"criteria_total"`
 }
 
 // activeSetWhere matches ledger rows (alias l) that set ticket t active.
@@ -90,9 +94,12 @@ const activeSetWhere = `l.ticket_ulid=t.ulid AND l.kind='status.set' AND l.paylo
 // with the who-holds-the-card join. Callers append WHERE / ORDER BY.
 const cardSelectSQL = `
 SELECT t.ulid, t.slug, t.title, t.status::text, t.rank, t.card_word::text, t.blocked_on, t.blocked_since, t.updated_at, t.parent,
-       a.actor, a.ts
+       a.actor, a.ts,
+       c.pass, c.total
 FROM tickets t LEFT JOIN LATERAL (SELECT l.actor, l.ts FROM ledger l WHERE ` + activeSetWhere + `
-                                  ORDER BY l.id DESC LIMIT 1) a ON t.status='active'`
+                                  ORDER BY l.id DESC LIMIT 1) a ON t.status='active'
+LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE s.state='pass') AS pass, count(*) AS total
+                   FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='criterion') c ON true`
 
 // Board returns queued/active/blocked cards in rank order. Arcs (tickets
 // that are the parent of at least one other ticket) are excluded here —
@@ -109,7 +116,7 @@ ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, t.
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -168,7 +175,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]Card, error) {
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -304,9 +311,9 @@ SELECT jsonb_build_object(
   'parent', t.parent,
   'gates', COALESCE((SELECT jsonb_agg(jsonb_build_object('gate', g.gate, 'actor', g.actor, 'ts', g.ts) ORDER BY g.ts)
                       FROM gate_events g WHERE g.ticket_ulid=t.ulid), '[]'::jsonb),
-  'criteria', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank)
+  'criteria', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state,'evidence',s.fields->>'evidence') ORDER BY s.rank, s.created_at, s.ulid)
                          FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='criterion'), '[]'::jsonb),
-  'plan', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body) ORDER BY s.rank)
+  'plan', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank, s.created_at, s.ulid)
                      FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='plan'), '[]'::jsonb),
   'decisions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'what',s.body,'why',s.fields->>'why'))
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='decision'), '[]'::jsonb),
@@ -319,6 +326,11 @@ SELECT jsonb_build_object(
   'feedback', COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'finding',l.payload->>'finding',
                              'source',COALESCE(l.payload->>'source','self'),'actor',l.actor,'ts',l.ts) ORDER BY l.id DESC)
                         FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='feedback'), '[]'::jsonb),
+  'contract', (SELECT l.payload || jsonb_build_object('actor',l.actor,'ts',l.ts)
+               FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='contract' ORDER BY l.id DESC LIMIT 1),
+  'review', (SELECT l.payload || jsonb_build_object('actor',l.actor,'ts',l.ts,
+               'runs',(SELECT count(*) FROM ledger r WHERE r.ticket_ulid=t.ulid AND r.kind='review'))
+             FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='review' ORDER BY l.id DESC LIMIT 1),
   'active_by', (SELECT l.actor FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
   'active_since', (SELECT l.ts FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
   'head', (SELECT max(id) FROM ledger WHERE ticket_ulid=t.ulid)

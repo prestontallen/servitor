@@ -39,6 +39,8 @@
           <div class="title">{c.title || c.slug}</div>
           <div class="meta">
             <span class="muted slug">{c.slug}</span>
+            <!-- plan mark: criteria pass / total (skills/servitor/references/events.md) -->
+            <span class="mark" title="criteria pass / total">{c.criteria_total ? `${c.criteria_pass}/${c.criteria_total}` : '—'}</span>
             {#if lane === 'blocked' && c.card_word}<span class="badge {wordClass(c.card_word)}">{c.card_word}</span>{/if}
             {#if lane === 'blocked' && c.blocked_on}<span class="badge blocked_on">on {c.blocked_on}</span>{/if}
             {#if c.active_by}<span class="hold">{short(c.active_by)}</span>{/if}
@@ -83,6 +85,7 @@
   .title { margin: 0 52px 5px 0; line-height: 1.3; }
   .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 11px; }
   .slug { font-size: 10px; }
+  .mark { font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
   .hold { font-size: 10px; color: var(--text); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 5px; }
   .age { color: var(--text-dim); margin-left: auto; white-space: nowrap; }
   .age.stale { color: var(--warn); font-weight: 600; }
