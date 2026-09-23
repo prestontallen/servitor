@@ -61,22 +61,63 @@ export function onRouteChange() {
   });
 }
 
+// ---- stored preferences ----------------------------------------------------
+// Storage throws with site data blocked and on a full quota. A preference
+// is never worth taking the page down for, so every read falls back to the
+// default and every write is allowed to fail silently.
+function lsGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function lsSet(key, v) {
+  try {
+    localStorage.setItem(key, v);
+  } catch {
+    // unwritable storage: the value still holds for this page load
+  }
+}
+
 // ---- theme ---------------------------------------------------------------
 export const ui = $state({
-  mode: localStorage.getItem('servitor_mode') || 'dark', // light | dark
-  accent: localStorage.getItem('servitor_accent') || 'forge' // forge | auspex
+  mode: lsGet('servitor_mode') || 'dark', // light | dark
+  accent: lsGet('servitor_accent') || 'forge' // forge | auspex
 });
 
 export function setMode(m) {
   ui.mode = m;
-  localStorage.setItem('servitor_mode', m);
+  lsSet('servitor_mode', m);
   document.documentElement.dataset.mode = m;
 }
 
 export function setAccent(a) {
   ui.accent = a;
-  localStorage.setItem('servitor_accent', a);
+  lsSet('servitor_accent', a);
   document.documentElement.dataset.accent = a;
+}
+
+// ---- fold state (arcs page bands) ------------------------------------------
+// Page-level folds are a preference, so they persist as one small object.
+// Browse-level folds (one arc's members) stay in the component.
+const FOLD_KEY = 'servitor.arcs.fold';
+
+function readFold() {
+  try {
+    const v = JSON.parse(lsGet(FOLD_KEY));
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {}; // corrupt value: start from the defaults
+  }
+}
+
+export const fold = $state(readFold());
+
+export function setFold(key, open) {
+  fold[key] = open;
+  lsSet(FOLD_KEY, JSON.stringify(fold));
 }
 
 // ---- data ----------------------------------------------------------------
