@@ -89,6 +89,11 @@ themselves — merging is a human act (or an agent's, only on explicit
 human instruction naming the PR). Push rejected because origin/main
 moved? Rebase your branch and push again; never force-push.
 
+Reviewer comments on the PR are the external phase of `servitor-review`:
+each comment becomes a `finding` subitem with its source, triaged as
+applied, rejected or escalated, a rejection logged as a decision, reply
+text shown to the human before posting. Then a fresh review run.
+
 ## 4. Merge and clean up
 
 After the human merges:

@@ -13,7 +13,7 @@
 # (Linux: deploy/servitord.service into ~/.config/systemd/user; macOS:
 # deploy/com.prestontallen.servitord.plist.in rendered into
 # ~/Library/LaunchAgents), restarts servitord, and
-# links the servitor, servitor-dev, ticket-flow and servitor-plan skills into every
+# links the servitor, servitor-dev, ticket-flow, servitor-plan and servitor-review skills into every
 # detected agent skill directory (Hermes: ~/.hermes/skills, Claude:
 # ~/.claude/skills), so skill edits are live immediately and binary edits
 # take effect after restart. On hosts with Claude Code it also registers
@@ -761,7 +761,7 @@ check() {
     done
   fi
   for dest in $(skill_roots); do
-    for b in servitor servitor-dev ticket-flow servitor-plan; do
+    for b in servitor servitor-dev ticket-flow servitor-plan servitor-review; do
       [ "$(readlink "${dest}/${b}" 2>/dev/null)" = "${REPO}/skills/${b}" ] \
         || { echo "drift: ${dest}/${b} is not linked to this checkout"; drift=1; }
     done
@@ -819,7 +819,7 @@ fi
 # schema must be current before the daemon restarts onto it; use the file's
 # DSN (may have just been written by --dsn)
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
-for s in servitor servitor-dev ticket-flow servitor-plan; do link_skill "${s}"; done
+for s in servitor servitor-dev ticket-flow servitor-plan servitor-review; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 install_hook
 restart

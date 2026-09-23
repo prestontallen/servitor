@@ -224,10 +224,15 @@ reviews the diff against the **ticket**. Candidate surfaces:
   subitems get `--state pass|fail`, the rest land as structured events the
   GUI can card. The review is the scorecard, not a transcript of one.
 - **Tier 0** reviews against the intake note's done-when line.
-- **The GUI reserves space for it.** Plan and review are first-class cards
-  on the ticket page and the board view, not conventions parsed out of
-  notes. The skill's output shape and the GUI's card shape are the same
-  contract; change one, change both.
+- **The GUI reserves space for it.** Superseded the same day: after the
+  first cut, Preston decided review gets **no GUI surface** for now. The
+  review event and its ctx read-back stay for the skill; the ledger fold is
+  where a human sees the runs. Plan keeps its cards.
+- **Findings are subitems (2026-09-23, with servitor-review's contract).**
+  One `finding` subitem per finding, closed by identity as applied,
+  rejected or escalated, instead of an array inside the review event. The
+  review event carries verdict, summary and phase (`self` | `external`).
+  Shapes in `servitor/references/events.md`.
 
 ---
 
