@@ -33,7 +33,8 @@
 
   const parentArc = $derived(doc?.parent ? arcs.list.find((a) => a.ulid === doc.parent) : null);
   const fields = $derived(doc?.fields || {});
-  const prov = $derived(['source', 'source_ref', 'depends', 'area'].filter((k) => fields[k] !== undefined));
+  // provenance, then the handoff record (skills/servitor: Handoff), in a fixed order
+  const prov = $derived(['source', 'source_ref', 'depends', 'area', 'branch', 'worktree', 'head', 'pushed', 'staging', 'checkpoint', 'next'].filter((k) => fields[k] !== undefined && fields[k] !== ''));
 
   const d = $derived(doc ? buildDossier(doc, history) : null);
 

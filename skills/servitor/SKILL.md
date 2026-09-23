@@ -109,6 +109,32 @@ Key on codes; read messages for detail.
    on WHOM and why in a note.
 5. Abandoning: `--status dropped`. Never fake done.
 
+## Handoff
+
+Another agent must be able to pick the ticket up from the ledger alone: a
+chat transcript is not the record. Seven ticket fields are the handoff
+record; the hook prints them on focus and the ticket page shows them as
+facts. Set each one **in the same command as the transition it describes**,
+never afterwards, or the record lags reality within minutes:
+
+| field | set when | value |
+|---|---|---|
+| `branch` | the branch is created | `agent/<you>/<slug>` |
+| `worktree` | the worktree is created | `../servitor-worktrees/<slug>` |
+| `head` | every commit | the short sha |
+| `pushed` | branch created (`false`), every push (`true`), every commit after a push (`false`) | `true` / `false` |
+| `staging` | a staging daemon or DB comes up, cleared (`staging=-`) when torn down | URL or DB name |
+| `checkpoint` | the human passes one | `summary-seen` / `commit-ok` / `push-ok` |
+| `next` | every transition | the single next action and whose it is |
+
+```
+servitor set <ref> head=<sha> pushed=false next="human reads the summary, then commit"
+```
+
+Plan steps are marked done when they are done (`servitor subitem <ref>
+<prefix> --state done`), not in bulk at presentation. Mid-ticket, the Plan
+card must say where you are.
+
 ## Process
 
 Classify at intake and say so; log one intake note with the rating.
@@ -183,6 +209,10 @@ carries over:
 2. No PR-comment reply without showing the exact text for approval first.
 3. No push without an explicit prompt naming what and where. Approval to
    commit is not approval to push.
+
+A checkpoint passed in chat is invisible to the next agent. Record it as it
+happens: `servitor set <ref> checkpoint=summary-seen` (then `commit-ok`,
+`push-ok`), and set `next` to what is now allowed.
 
 ## Environment
 
