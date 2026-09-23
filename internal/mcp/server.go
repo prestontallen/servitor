@@ -55,7 +55,7 @@ func tools() []tool {
 		},
 		{
 			Name:        "servitor_append",
-			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), subitem.add (kind,body,rank), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
+			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), flow.set (nodes:[{id,label,state}] with state queued|active|blocked|done and edges:[{from,to}] — a whole-graph snapshot; the ticket GUI renders the latest one as a flowchart), subitem.add (kind,body,rank), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {

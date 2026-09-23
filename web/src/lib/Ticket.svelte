@@ -3,6 +3,7 @@
   import { view, arcs, openArc, kindGlyph, fmtTs, relTs, eventText } from './state.svelte.js';
   import { buildDossier } from './dossier.js';
   import DossierTimeline from './DossierTimeline.svelte';
+  import Flow from './Flow.svelte';
 
   let doc = $state(null);
   let error = $state(null);
@@ -247,6 +248,22 @@
       <section class="panel inst plan empty">
         <h3>Plan</h3>
         <div class="src">none yet · servitor.plan fills this</div>
+      </section>
+    {/if}
+
+    <!-- ================= flow: agent-submitted flowchart ================= -->
+    {#if d.flow?.ok}
+      {@const fl = d.flow}
+      <section class="panel inst flow">
+        <h3>Flow <span class="chip">{fl.nodes.length} nodes</span></h3>
+        <div class="src">from flow.set events · v{fl.versions} · {fl.actor}</div>
+        <Flow {history} />
+      </section>
+    {:else if d.flow}
+      <section class="panel inst flow">
+        <h3>Flow</h3>
+        <div class="src">from flow.set events</div>
+        <p class="muted" data-testid="flow-error">flow unparsable: {d.flow.error}</p>
       </section>
     {/if}
 
