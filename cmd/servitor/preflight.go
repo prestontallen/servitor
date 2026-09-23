@@ -59,9 +59,20 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 	// separate call: --abbrev-ref HEAD fails on an unborn branch, and that
 	// must not read as "not a git checkout"
 	branch, _ := git(time.Second, "rev-parse", "--abbrev-ref", "HEAD")
-	if canonical {
+	// every agent on the host shares the canonical checkout, so a ticket
+	// branch checked out there breaks everyone's "where am I"; "" and
+	// "HEAD" are unborn/detached and get the plain line.
+	offMain := canonical && branch != "" && branch != "HEAD" && branch != "main"
+	switch {
+	case offMain:
+		fmt.Fprintf(w, "canonical checkout on %s: MUST BE ON MAIN. Someone checked a branch out here. Restore before anything else:\n", branch)
+		// a WIP commit, not a stash: the stash stack is shared by every
+		// worktree and any session may pop it
+		fmt.Fprintf(w, "  git -C %s commit -qam wip; git -C %s checkout main; git worktree add ../%s-worktrees/<its-slug> %s\n",
+			top, top, filepath.Base(top), branch)
+	case canonical:
 		fmt.Fprintf(w, "canonical checkout on %s: CREATE A WORKTREE BEFORE EDITING\n", branch)
-	} else {
+	default:
 		fmt.Fprintf(w, "worktree %s on %s\n", top, branch)
 	}
 
@@ -97,5 +108,8 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 		name := strings.TrimPrefix(actor, "agent:")
 		fmt.Fprintf(w, "  git fetch origin\n  git worktree add -b agent/%s/%s ../%s-worktrees/%s origin/main\n",
 			name, slug, filepath.Base(top), slug)
+		// cd does not move a Claude Code session; the tool does
+		fmt.Fprintf(w, "  Claude Code: then EnterWorktree path=../%s-worktrees/%s (cd alone leaves the session here)\n",
+			filepath.Base(top), slug)
 	}
 }
