@@ -11,6 +11,9 @@
 #   - download_release unpacks a tarball, installs binaries, and repoints
 #     REPO at the release tree
 #   - record_mode + check() distinguish release vs source installs
+#   - link_skill refuses to link a skill the tree does not carry, drops a
+#     dangling link left by an earlier install, and leaves a real directory
+#     alone; check_skill_links reports a dangling link as drift
 #
 # Method: install.sh is sourced as a library (SERVITOR_INSTALL_LIB=1) with a
 # stub PATH, a fake HOME, and a stub curl that serves a real tarball built
@@ -157,6 +160,76 @@ check "install_mode reads source" "$(run 'install_mode')" "source"
 # a pre-release-pipeline install (no marker) reads as source
 rm -f "${FAKE_HOME}/.config/servitor/install-mode"
 check "no marker reads as source" "$(run 'install_mode')" "source"
+
+echo
+echo "== skill links: a name the tree does not carry =="
+# The fixture ships skills/servitor and nothing else — the exact shape that
+# produced this bug: an install.sh newer than the release, naming skills the
+# tarball does not have.
+TREE="${FAKE_HOME}/.config/servitor/release"
+run 'download_release' >/dev/null
+ROOT="${FAKE_HOME}/.claude/skills"
+rm -rf "${ROOT}"; mkdir -p "${ROOT}"
+
+out="$(run "REPO='${TREE}'; link_skill servitor; link_skill servitor-review" 2>&1)"
+[ -d "${ROOT}/servitor" ] \
+  && ok "a skill in the tree is linked" || bad "a skill in the tree is linked"
+[ -L "${ROOT}/servitor-review" ] \
+  && bad "a skill not in the tree must not be linked" \
+  || ok "a skill not in the tree is not linked"
+has "the warning names the skill and the tree" "${out}" \
+  "no servitor-review skill in ${TREE}/skills"
+
+# a link an earlier install left behind now points at nothing
+ln -sfn "${TREE}/skills/servitor-review" "${ROOT}/servitor-review"
+out="$(run "REPO='${TREE}'; link_skill servitor-review" 2>&1)"
+[ -L "${ROOT}/servitor-review" ] \
+  && bad "a dangling link must be removed" || ok "a dangling link is removed"
+has "removing the dangling link is announced" "${out}" "removing dangling servitor-review link"
+
+# a link pointing somewhere real is not ours to delete
+mkdir -p "${WORK}/elsewhere/servitor-plan"
+ln -sfn "${WORK}/elsewhere/servitor-plan" "${ROOT}/servitor-plan"
+run "REPO='${TREE}'; link_skill servitor-plan" >/dev/null 2>&1
+check "a link with a live target is left alone" \
+  "$(readlink "${ROOT}/servitor-plan")" "${WORK}/elsewhere/servitor-plan"
+
+# a real directory an operator put there is never removed
+rm -f "${ROOT}/servitor-plan"
+mkdir -p "${ROOT}/servitor-plan"
+printf 'operator own skill\n' > "${ROOT}/servitor-plan/SKILL.md"
+run "REPO='${TREE}'; link_skill servitor-plan" >/dev/null 2>&1
+[ -f "${ROOT}/servitor-plan/SKILL.md" ] \
+  && ok "a real directory is left alone" || bad "a real directory is left alone"
+rm -rf "${ROOT}/servitor-plan"
+
+echo
+echo "== the skipped-skill report =="
+out="$(run 'SKIPPED_SKILLS=(servitor-plan servitor-review); report_skipped_skills' 2>&1)" \
+  && ok "the report does not fail the install" || bad "the report does not fail the install"
+has "the report names each skipped skill" "${out}" "servitor-review"
+has "the report says what to do"          "${out}" "install.sh --from-source"
+check "nothing skipped, nothing said" "$(run 'report_skipped_skills' 2>&1)" ""
+
+echo
+echo "== --check sees a dangling link =="
+# right readlink, no target: the drift the old readlink-only test could not see
+rm -rf "${ROOT}"; mkdir -p "${ROOT}"
+for b in servitor servitor-dev ticket-flow servitor-plan servitor-review; do
+  ln -sfn "${TREE}/skills/${b}" "${ROOT}/${b}"
+done
+out="$(run "REPO='${TREE}'; check_skill_links" 2>&1)" \
+  && bad "a dangling link must be drift" || ok "a dangling link is drift"
+has "dangling drift says the target is not there" "${out}" \
+  "${ROOT}/servitor-review links to ${TREE}/skills/servitor-review, which is not there"
+hasnt "a dangling link is not reported as unlinked" "${out}" \
+  "${ROOT}/servitor-review is not linked"
+hasnt "the one real skill is not drift" "${out}" "${ROOT}/servitor is not"
+
+# a wrong readlink still reports as unlinked
+ln -sfn /nowhere/servitor "${ROOT}/servitor"
+out="$(run "REPO='${TREE}'; check_skill_links" 2>&1)" || true
+has "a wrong target reports as not linked" "${out}" "${ROOT}/servitor is not linked to this checkout"
 
 echo
 if [ "${fail}" -eq 0 ]; then
