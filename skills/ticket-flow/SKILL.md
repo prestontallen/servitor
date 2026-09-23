@@ -42,6 +42,7 @@ export SERVITOR_ACTOR=agent:<agentname>
 servitor set <ref> --status active
 git fetch origin
 git worktree add -b agent/<agentname>/<ticket-slug> ../servitor-worktrees/<ticket-slug> origin/main
+servitor set <ref> branch=agent/<agentname>/<ticket-slug> worktree=../servitor-worktrees/<ticket-slug> pushed=false next="contract"
 cd ../servitor-worktrees/<ticket-slug>
 ```
 
@@ -63,7 +64,8 @@ and another session can pop it. Never bare `git stash` / `git stash pop`;
 set work aside with a WIP commit on your branch and squash it later.
 
 All commits happen in the worktree, on the branch. Small commits, honest
-messages. Stage files by name, never `git add -A` or `git add .`: a
+messages. Every commit updates the handoff record in the same breath:
+`servitor set <ref> head=<sha> pushed=false next="..."`. Stage files by name, never `git add -A` or `git add .`: a
 half-committed change (a state file without its consumers, a stray test
 file riding along) is exactly what that shortcut produces. If you fix
 something unrelated, it goes in its own branch off main with its own PR.
@@ -73,6 +75,7 @@ something unrelated, it goes in its own branch off main with its own PR.
 ```bash
 git fetch origin && git rebase origin/main   # in YOUR tree, before every push
 git push origin agent/<agentname>/<ticket-slug>
+servitor set <ref> head=<sha> pushed=true checkpoint=push-ok next="open the PR"
 ```
 
 Open the PR against main with `gh pr create` or on GitHub: title
@@ -96,6 +99,7 @@ git -C <canonical> fetch origin
 git -C <canonical> worktree remove --force ../servitor-worktrees/<ticket-slug>
 git -C <canonical> branch -D agent/<agentname>/<ticket-slug>
 git push origin --delete agent/<agentname>/<ticket-slug>
+servitor set <ref> staging=- next="none, done"   # staging torn down with the worktree
 servitor log <ref> note "PR #N merged; branch + worktree released."
 ```
 

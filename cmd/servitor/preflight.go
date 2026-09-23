@@ -24,6 +24,11 @@ func toneInstalled(home string) bool {
 	return false
 }
 
+// handoffFields are the ticket fields that make up the handoff record, in
+// print order. Agents set them with `servitor set` in the same command as
+// the transition they describe (skills/servitor: Handoff).
+var handoffFields = []string{"branch", "worktree", "head", "pushed", "staging", "checkpoint", "next"}
+
 // preflight prints the where-am-I header for the SessionStart hook: cwd,
 // canonical checkout vs linked worktree, branch, distance behind
 // origin/main, and who holds the focused card. Best effort: every git call
@@ -90,10 +95,11 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 	slug := "<ticket-slug>"
 	if doc != nil {
 		var f struct {
-			Slug        string `json:"slug"`
-			Status      string `json:"status"`
-			ActiveBy    string `json:"active_by"`
-			ActiveSince string `json:"active_since"`
+			Slug        string         `json:"slug"`
+			Status      string         `json:"status"`
+			ActiveBy    string         `json:"active_by"`
+			ActiveSince string         `json:"active_since"`
+			Fields      map[string]any `json:"fields"`
 		}
 		if json.Unmarshal(doc, &f) == nil && f.Slug != "" {
 			slug = f.Slug
@@ -102,6 +108,13 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 				line += fmt.Sprintf(", active by %s since %s: do not start it", f.ActiveBy, f.ActiveSince)
 			}
 			fmt.Fprintln(w, line)
+			// the handoff record: where the work is and what may happen
+			// next, so a cold agent reads it before anything else
+			for _, k := range handoffFields {
+				if v, ok := f.Fields[k]; ok && v != nil && v != "" {
+					fmt.Fprintf(w, "handoff %s: %v\n", k, v)
+				}
+			}
 		}
 	}
 	if canonical {

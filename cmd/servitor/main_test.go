@@ -196,12 +196,23 @@ func TestPreflight(t *testing.T) {
 	}
 	b.Reset()
 	start := time.Now()
-	preflight(&b, dir, "agent:test", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z"}`))
+	preflight(&b, dir, "agent:test", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z",
+		"fields":{"branch":"agent/test/x","head":"abc1234","pushed":false,"checkpoint":"commit-ok","next":"await push prompt","area":"cli","staging":""}}`))
 	out := b.String()
-	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x", "EnterWorktree path=../"} {
+	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x", "EnterWorktree path=../",
+		"handoff branch: agent/test/x", "handoff head: abc1234", "handoff pushed: false", "handoff checkpoint: commit-ok", "handoff next: await push prompt"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+	// only the handoff fields, in order, and empty ones are skipped
+	if strings.Contains(out, "handoff area") || strings.Contains(out, "handoff staging") || strings.Index(out, "handoff branch") > strings.Index(out, "handoff next") {
+		t.Errorf("handoff lines wrong:\n%s", out)
+	}
+	b.Reset()
+	preflight(&b, dir, "agent:test", []byte(`{"slug":"y","status":"queued"}`))
+	if strings.Contains(b.String(), "handoff") {
+		t.Errorf("no fields, no handoff lines:\n%s", b.String())
 	}
 	if strings.Contains(out, "MUST BE ON MAIN") {
 		t.Errorf("unborn main must not read as off-main:\n%s", out)
