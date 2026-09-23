@@ -6,7 +6,7 @@
 #   servitor_<os>_<arch>.tar.gz
 #     servitor, servitord, servitor-mcp   # binaries, at the archive root
 #     deploy/                            # service definitions to render
-#     skills/                            # servitor, servitor-dev, ticket-flow
+#     skills/                            # all of skills/, six at v0.1.1
 #     README.md
 # plus checksums.txt (sha256 of every tarball) at the release root.
 name: release
