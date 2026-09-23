@@ -18,6 +18,11 @@
 //   "... open question ..." / "Question: ..."                        -> questions
 //   "ANSWER: ..."                                                    -> answers the latest open question
 
+// Flowcharts come from the flow lib: foldFlow picks and validates the
+// latest flow.set snapshot. Imported here so buildDossier is the one place
+// every instrument is assembled.
+import { foldFlow as flow } from './flow.js';
+
 const INTAKE = /^\s*intake\b[^:\n]*:/i;
 const CONTRACT = /^\s*contract\b[^:\n]*:/i;
 const DECISION = /^\s*decision\b[^:\n]*:/i;
@@ -267,6 +272,7 @@ export function buildDossier(doc, history = [], now = Date.now()) {
     decisions: decisions(doc, history, ns),
     corrections: corrections(ns),
     feedback: feedback(doc, history),
+    flow: flow(history),
     links: (doc.links || []).length ? { source: 'link subitems', items: doc.links.map((l) => ({ url: l.url })) } : null,
     counts: ledgerCounts(history)
   };

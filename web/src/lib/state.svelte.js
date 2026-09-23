@@ -111,7 +111,8 @@ export function wordClass(w) {
 const KIND_GLYPH = {
   note: '✎', decision: '⚖', gate: '⚖', feedback: '✦',
   'ticket.create': '✚', 'status.set': '⇄', 'field.set': '≡',
-  'subitem.add': '＋', 'subitem.set': '≡', 'subitem.rank': '↕', hook: '⚡'
+  'subitem.add': '＋', 'subitem.set': '≡', 'subitem.rank': '↕', hook: '⚡',
+  'flow.set': '⤳'
 };
 export function kindGlyph(kind) {
   return KIND_GLYPH[kind] || '•';
@@ -131,6 +132,11 @@ export function eventText(e) {
       return `${p.field} = ${v === '' ? "''" : v}`;
     }
     case 'ticket.create': return p.title ? `created — ${p.title}` : 'created';
+    case 'flow.set': {
+      const n = Array.isArray(p.nodes) ? p.nodes.length : 0;
+      const e = Array.isArray(p.edges) ? p.edges.length : 0;
+      return n ? `flowchart snapshot — ${n} node${n === 1 ? '' : 's'}, ${e} edge${e === 1 ? '' : 's'}` : 'flowchart snapshot';
+    }
     case 'decision': return p.what ? `${p.what}${p.why ? ' — ' + p.why : ''}` : 'decision';
     case 'feedback': return p.finding || 'feedback';
     case 'subitem.add': return p.body || `added ${p.kind || 'subitem'}`;
