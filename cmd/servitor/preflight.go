@@ -5,11 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// toneInstalled reports whether install.sh linked the servitor-tone skill
+// into any agent skill root under home (Claude, Hermes). install.sh links
+// every detected root together, so one is as good as all.
+func toneInstalled(home string) bool {
+	for _, root := range []string{".claude/skills", ".hermes/skills"} {
+		if _, err := os.Stat(filepath.Join(home, root, "servitor-tone")); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
 // preflight prints the where-am-I header for the SessionStart hook: cwd,
 // canonical checkout vs linked worktree, branch, distance behind
@@ -26,6 +39,11 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 		return strings.TrimSpace(string(out)), err
 	}
 
+	// the tone skill is opt-in at install and mandatory once linked; the
+	// hook is in context every session, so it is where that gets said
+	if home, err := os.UserHomeDir(); err == nil && toneInstalled(home) {
+		fmt.Fprintln(w, "register: servitor-tone ON")
+	}
 	fmt.Fprintf(w, "cwd: %s\n", dir)
 	top, err := git(time.Second, "rev-parse", "--show-toplevel")
 	if err != nil {
