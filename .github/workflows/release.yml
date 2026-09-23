@@ -1,0 +1,75 @@
+# Release: on tag push (vX.Y.Z), build the GUI, cross-compile the three
+# binaries for each supported platform, and publish a GitHub Release whose
+# tarballs install.sh downloads on machines with no Go and no Node.
+#
+# Tarball layout (the contract with install.sh — both sides test against it):
+#   servitor_<os>_<arch>.tar.gz
+#     servitor, servitord, servitor-mcp   # binaries, at the archive root
+#     deploy/                            # service definitions to render
+#     skills/                            # servitor, servitor-dev, ticket-flow
+#     README.md
+# plus checksums.txt (sha256 of every tarball) at the release root.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: npm ci && npm run build
+        working-directory: web
+      - run: go build ./...   # embeds the freshly built GUI; CI gates tests on PRs
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          for goos in linux darwin; do
+            for goarch in amd64 arm64; do
+              dir="dist/build/${goos}_${goarch}"
+              mkdir -p "${dir}"
+              for bin in servitor servitord servitor-mcp; do
+                CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
+                  go build -trimpath -ldflags "-s -w" \
+                    -o "${dir}/${bin}" "./cmd/${bin}"
+              done
+            done
+          done
+      - name: Pack archives
+        run: |
+          set -euo pipefail
+          for goos in linux darwin; do
+            for goarch in amd64 arm64; do
+              dir="dist/build/${goos}_${goarch}"
+              cp -r deploy skills README.md "${dir}/"
+              # keep the tarball lean: skills ship their SKILL.md and
+              # references, not caches or logs
+              tar -czf "dist/release/servitor_${goos}_${goarch}.tar.gz" \
+                -C "${dir}" servitor servitord servitor-mcp deploy skills README.md
+            done
+          done
+          (cd dist/release && sha256sum *.tar.gz > checksums.txt)
+          ls -l dist/release
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          pre=""
+          case "${tag}" in *-*) pre="--prerelease" ;; esac
+          gh release create "${tag}" dist/release/* \
+            --title "servitor ${tag}" \
+            --generate-notes ${pre}
+          gh release view "${tag}" --json assets --jq \
+            '.assets[].name'

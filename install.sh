@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# Build servitor from this checkout and redeploy it locally.
+# Install servitor and redeploy it locally.
 #
-# Installs the binaries to ~/.local/bin, installs the service definition for
-# this OS (Linux: deploy/servitord.service into ~/.config/systemd/user; macOS:
+# Default (release mode): detect OS/arch, download the matching prebuilt
+# tarball from GitHub Releases — binaries with the GUI already embedded, no
+# Go or Node needed — verify it against checksums.txt, install the binaries
+# to ~/.local/bin, and take deploy/ and skills/ from the unpacked release
+# tree. --from-source builds from this checkout instead (the original
+# behavior: npm-builds the GUI in web/ into internal/api/static, then
+# go build); it is for development and air-gapped hosts.
+#
+# Either way the script then installs the service definition for this OS
+# (Linux: deploy/servitord.service into ~/.config/systemd/user; macOS:
 # deploy/com.prestontallen.servitord.plist.in rendered into
 # ~/Library/LaunchAgents), restarts servitord, and
 # links the servitor, servitor-dev and ticket-flow skills into every
@@ -11,8 +19,11 @@
 # take effect after restart. On hosts with Claude Code it also registers
 # the SessionStart hook (`servitor hook`) in ~/.claude/settings.json.
 #
-# Usage: ./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
+# Usage: ./install.sh [--check] [--from-source] [--version TAG]
+#                     [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 #   --check    report drift and exit 1 if the deployed state differs
+#   --from-source  build locally instead of downloading a release
+#   --version TAG  install a specific release (default: latest)
 #   --tone     link the servitor-tone skill (terse procedural reporting
 #              register) into every detected agent skill directory. Opt-in
 #              here; once linked, the hook announces it and it is mandatory
@@ -38,6 +49,12 @@ ENV_FILE="${HOME}/.config/servitor/servitord.env"
 ENV_DIR="${HOME}/.config/servitor"
 CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
 HOOK_CMD="servitor hook"
+MODE_FILE="${ENV_DIR}/install-mode"
+
+# Release channel. GITHUB_REPO can override for forks; GH_TOKEN/ GITHUB_TOKEN
+# (optional) authenticates downloads from a private repo.
+GITHUB_REPO="${SERVITOR_GITHUB_REPO:-prestontallen/servitor}"
+RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
 
 BINARIES=(servitor servitord servitor-mcp)
 
@@ -146,6 +163,8 @@ WANT_TONE=0
 WANT_DSN=""
 WANT_TOKEN=""
 WANT_RECONFIGURE=0
+WANT_FROM_SOURCE=0
+WANT_VERSION=""
 DSN_UNREACHABLE=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -153,6 +172,9 @@ while [ $# -gt 0 ]; do
     --no-tone) WANT_TONE=0; TONE_ASKED=1 ;;
     --check) WANT_CHECK=1 ;;
     --reconfigure) WANT_RECONFIGURE=1 ;;
+    --from-source) WANT_FROM_SOURCE=1 ;;
+    --version) WANT_VERSION="${2:-}"; shift ;;
+    --version=*) WANT_VERSION="${1#*=}" ;;
     --dsn) WANT_DSN="${2:-}"; shift ;;
     --dsn=*) WANT_DSN="${1#*=}" ;;
     --token) WANT_TOKEN="${2:-}"; shift ;;
@@ -222,6 +244,144 @@ build() {
   # have no node_modules; npx would fetch unpinned vite instead)
   (cd "${REPO}/web" && { [ -x node_modules/.bin/vite ] || npm ci; } && npm run build)
   (cd "${REPO}" && go build -o "${BIN_DIR}" ./cmd/servitor ./cmd/servitord ./cmd/servitor-mcp)
+}
+
+# ---- release (prebuilt) mode --------------------------------------------
+#
+# The default install path: fetch a GitHub Release built by CI (the release
+# workflow builds the GUI and embeds it at build time), verify its checksum,
+# and unpack binaries + deploy/ + skills/ into a stable location so this
+# script — and later --check — can treat it exactly like a source checkout.
+# Nothing on this machine needs Go or Node.
+
+release_root() {
+  # where the unpacked release tree lives; skills/ links point here, so it
+  # must be stable across runs (a temp dir would leave dangling links)
+  printf '%s\n' "${ENV_DIR}/release"
+}
+
+platform_id() {
+  # os_arch of this host in release-asset naming; errors with the supported
+  # list when no asset can match
+  local os arch
+  case "${OS}" in
+    Linux)  os=linux ;;
+    Darwin) os=darwin ;;
+    *)
+      echo "ERROR: unsupported OS '${OS}'. Release assets exist for Linux and macOS." >&2
+      return 1
+      ;;
+  esac
+  arch="$(uname -m)"
+  case "${arch}" in
+    x86_64|amd64)  arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *)
+      echo "ERROR: unsupported architecture '${arch}' (uname -m)." >&2
+      echo "       Release assets exist for amd64 and arm64." >&2
+      return 1
+      ;;
+  esac
+  printf '%s_%s' "${os}" "${arch}"
+}
+
+fetch() {
+  # fetch URL DEST via curl or wget. GH_TOKEN/GITHUB_TOKEN, when set, is sent
+  # as a bearer header so private-repo downloads work; public repos need no
+  # token and none is sent.
+  local url="$1" dest="$2" token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  if command -v curl >/dev/null 2>&1; then
+    if [ -n "${token}" ]; then
+      curl --fail --location --silent --show-error \
+        -H "Authorization: Bearer ${token}" -o "${dest}" "${url}"
+    else
+      curl --fail --location --silent --show-error -o "${dest}" "${url}"
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if [ -n "${token}" ]; then
+      wget --quiet --header="Authorization: Bearer ${token}" -O "${dest}" "${url}"
+    else
+      wget --quiet -O "${dest}" "${url}"
+    fi
+  else
+    echo "ERROR: neither curl nor wget found — cannot download ${url}" >&2
+    return 1
+  fi
+}
+
+verify_checksum() {
+  # verify_checksum TARBALL CHECKSUMS: the CHECKSUMS line matching the
+  # tarball's name, compared with sha256sum (Linux) or shasum (macOS).
+  local tarball="$1" sums="$2" name want got
+  name="$(basename "${tarball}")"
+  want="$(awk -v n="${name}" '$2 == n {print $1}' "${sums}")"
+  if [ -z "${want}" ]; then
+    echo "ERROR: ${name} is not listed in $(basename "${sums}")" >&2
+    return 1
+  fi
+  got="$( { sha256sum "${tarball}" 2>/dev/null || shasum -a 256 "${tarball}"; } \
+    | awk '{print $1}')"
+  [ "${got}" = "${want}" ] || { echo "ERROR: checksum mismatch for ${name}" >&2; return 1; }
+}
+
+download_release() {
+  # Fetch the release matching this host, verify it, install the binaries,
+  # and repoint REPO at the unpacked tree so every later step (service
+  # render, skill links, --check) treats it exactly like a checkout.
+  local plat tag dir tarball work b base
+  plat="$(platform_id)" || exit 1
+  tag="${WANT_VERSION:-latest}"
+  # GitHub's asset URLs differ by tag: /releases/latest/download/FILE for
+  # the latest release, /releases/download/TAG/FILE for a pinned one
+  if [ "${tag}" = "latest" ]; then
+    base="${RELEASES_URL}/latest/download"
+  else
+    base="${RELEASES_URL}/download/${tag}"
+  fi
+  dir="$(release_root)"
+  tarball="servitor_${plat}.tar.gz"
+  echo "==> fetching ${GITHUB_REPO} release ${tag} (${tarball})"
+  work="$(mktemp -d)"
+  if ! fetch "${base}/${tarball}" "${work}/${tarball}"; then
+    echo "ERROR: download failed: ${base}/${tarball}" >&2
+    echo "       private repo? export GH_TOKEN. no releases yet? ${RELEASES_URL}" >&2
+    rm -rf "${work}"; exit 1
+  fi
+  if ! fetch "${base}/checksums.txt" "${work}/checksums.txt"; then
+    echo "ERROR: could not fetch checksums.txt from release ${tag}" >&2
+    rm -rf "${work}"; exit 1
+  fi
+  if ! verify_checksum "${work}/${tarball}" "${work}/checksums.txt"; then
+    echo "ERROR: the download is corrupt or tampered; refusing to install." >&2
+    rm -rf "${work}"; exit 1
+  fi
+  # unpack fresh: a stale tree from an older release would leave skills/
+  # linking files that no longer exist in this version
+  rm -rf "${dir}"
+  mkdir -p "${dir}" "${BIN_DIR}"
+  tar -xzf "${work}/${tarball}" -C "${dir}"
+  rm -rf "${work}"
+  for b in "${BINARIES[@]}"; do
+    [ -x "${dir}/${b}" ] \
+      || { echo "ERROR: ${tarball} is missing the ${b} binary" >&2; exit 1; }
+    install -m 0755 "${dir}/${b}" "${BIN_DIR}/${b}"
+  done
+  REPO="${dir}"
+  RELEASE_TAG="${tag}"
+}
+
+install_mode() {
+  # how the current install was produced; pre-release-pipeline installs
+  # (no marker) are all source installs
+  local mode="source"
+  [ -f "${MODE_FILE}" ] && mode="$(head -1 "${MODE_FILE}")"
+  printf '%s' "${mode}"
+}
+
+record_mode() {
+  # remember how this install was produced; --check reads it back
+  mkdir -p "${ENV_DIR}"
+  printf '%s\n' "$1" > "${MODE_FILE}"
 }
 
 restart() {
@@ -574,15 +734,32 @@ apply_schema() {
 }
 
 check() {
-  local drift=0 b dest
-  for b in "${BINARIES[@]}"; do
-    # binary drift: rebuild to a temp file and compare
-    if (cd "${REPO}" && go build -o "/tmp/servitor-check-${b}" ./cmd/${b}); then
-      cmp -s "/tmp/servitor-check-${b}" "${BIN_DIR}/${b}" \
-        || { echo "drift: ${BIN_DIR}/${b} differs from a fresh build"; drift=1; }
-      rm -f "/tmp/servitor-check-${b}"
+  local drift=0 b dest mode
+  mode="$(install_mode)"
+  echo "install mode: ${mode}"
+  if [ "${mode}" = "release" ]; then
+    # compare against the unpacked release tree, not this checkout: a
+    # checkout's binaries were never what was installed
+    if [ -d "$(release_root)" ]; then
+      REPO="$(release_root)"
+    else
+      echo "drift: release tree $(release_root) is missing (rerun install.sh)"
+      drift=1
     fi
-  done
+    for b in "${BINARIES[@]}"; do
+      cmp -s "${REPO}/${b}" "${BIN_DIR}/${b}" \
+        || { echo "drift: ${BIN_DIR}/${b} differs from the release tree"; drift=1; }
+    done
+  else
+    for b in "${BINARIES[@]}"; do
+      # binary drift: rebuild to a temp file and compare
+      if (cd "${REPO}" && go build -o "/tmp/servitor-check-${b}" ./cmd/${b}); then
+        cmp -s "/tmp/servitor-check-${b}" "${BIN_DIR}/${b}" \
+          || { echo "drift: ${BIN_DIR}/${b} differs from a fresh build"; drift=1; }
+        rm -f "/tmp/servitor-check-${b}"
+      fi
+    done
+  fi
   for dest in $(skill_roots); do
     for b in servitor servitor-dev ticket-flow; do
       [ "$(readlink "${dest}/${b}" 2>/dev/null)" = "${REPO}/skills/${b}" ] \
@@ -624,11 +801,21 @@ fi
 # must run before svc_install replaces that definition with the template
 ensure_env_file
 
+# binaries and the tree they came from first: svc_install renders deploy/
+# out of REPO, and in release mode REPO is the unpacked release tree (on a
+# fresh machine there is no checkout at all)
+if [ "${WANT_FROM_SOURCE}" -eq 1 ]; then
+  build
+  record_mode source
+else
+  download_release
+  record_mode release
+fi
+
 if ! svc_installed; then
   svc_install
 fi
 
-build
 # schema must be current before the daemon restarts onto it; use the file's
 # DSN (may have just been written by --dsn)
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
