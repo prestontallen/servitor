@@ -197,12 +197,40 @@ func TestPreflight(t *testing.T) {
 	start := time.Now()
 	preflight(&b, dir, "agent:test", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z"}`))
 	out := b.String()
-	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x"} {
+	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x", "EnterWorktree path=../"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "MUST BE ON MAIN") {
+		t.Errorf("unborn main must not read as off-main:\n%s", out)
+	}
 	if d := time.Since(start); d > 4*time.Second {
 		t.Errorf("preflight took %v, budget is 4s", d)
+	}
+
+	// the canonical checkout on a ticket branch is the loudest line, with
+	// the restore recipe; back on main it is the ordinary one
+	for _, args := range [][]string{
+		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"},
+		{"checkout", "-q", "-b", "agent/other/thing"},
+	} {
+		if err := exec.Command("git", append([]string{"-C", dir}, args...)...).Run(); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	b.Reset()
+	preflight(&b, dir, "agent:test", nil)
+	out = b.String()
+	if !strings.Contains(out, "canonical checkout on agent/other/thing: MUST BE ON MAIN") || !strings.Contains(out, "checkout main") || !strings.Contains(out, "worktree add") {
+		t.Errorf("off-main canonical: %q", out)
+	}
+	if err := exec.Command("git", "-C", dir, "checkout", "-q", "main").Run(); err != nil {
+		t.Fatal(err)
+	}
+	b.Reset()
+	preflight(&b, dir, "agent:test", nil)
+	if out = b.String(); strings.Contains(out, "MUST BE ON MAIN") || !strings.Contains(out, "canonical checkout on main: CREATE A WORKTREE") {
+		t.Errorf("canonical on main: %q", out)
 	}
 }

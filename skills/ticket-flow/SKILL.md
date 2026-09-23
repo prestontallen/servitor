@@ -23,7 +23,9 @@ hook install.sh registers; Hermes: run it yourself). Read it, then check:
 1. `SERVITOR_ACTOR` is `agent:<you>`, not the default `agent:cli`.
 2. Where you are. `canonical checkout` means create a worktree before
    editing; the commands are in the output. In a worktree, the branch
-   must be your ticket's.
+   must be your ticket's. `canonical checkout on <anything but main>`
+   means someone checked a branch out there: restore it first (the hook
+   prints how), because every agent on this host shares that checkout.
 3. Behind origin/main? Fetch and rebase before you push, not mid-thought.
 4. The focused card `active by` someone else? Do not start it.
    Coordinate or pick another card.
@@ -43,12 +45,22 @@ git worktree add -b agent/<agentname>/<ticket-slug> ../servitor-worktrees/<ticke
 cd ../servitor-worktrees/<ticket-slug>
 ```
 
+Claude Code sessions: `cd` does not move the session, every tool call
+resets to the launch directory. After `git worktree add`, call
+`EnterWorktree` with `path=../servitor-worktrees/<ticket-slug>` so the
+session itself runs in the worktree. Hermes: `cd` is enough, but never
+`git checkout` a branch in the canonical checkout.
+
 One branch per ticket, named for the ticket slug — not for the task
 du jour. If the work outgrows the ticket, split the ticket, then split
 the branch. Branch and worktree die together at merge time. The
 canonical checkout stays on main and takes no edits.
 
 ## 2. Work
+
+The stash stack is shared by the canonical checkout and every worktree,
+and another session can pop it. Never bare `git stash` / `git stash pop`;
+set work aside with a WIP commit on your branch and squash it later.
 
 All commits happen in the worktree, on the branch. Small commits, honest
 messages. Stage files by name, never `git add -A` or `git add .`: a
