@@ -149,7 +149,10 @@ Classify at intake and say so; log one intake note with the rating.
 - **Spikes** ("research X"): deliverable is an answer, not a change. No
   implementation code on a spike, ever.
 
-**Contract** (tier 1+): present what will exist when the work is done —
+**Contract** (tier 1+): load the `servitor-plan` skill; it climbs the
+planning ladder and writes the contract as structure (contract event,
+criteria, plan steps, decisions, questions), never as a prose note. In
+words: present what will exist when the work is done —
 what we build, what we explicitly won't, how we'll prove it — per
 [references/contract.md](references/contract.md), then request the
 `contract_approved` gate. **Do not write implementation code before the
