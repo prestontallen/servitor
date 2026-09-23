@@ -16,6 +16,12 @@
   /* ledger kind hues for dot marks; CVD-checked against the dark surface */
   --k-decision: #4a9ad4;
   --k-feedback: #e264a8;
+  /* dotlattice package theme hooks, mapped to the GUI palette */
+  --dl-line: var(--line-strong);
+  --dl-accent: var(--accent);
+  --dl-hover: var(--text);
+  --dl-dim: var(--text-dim);
+  --dl-fail: var(--fail);
 }
 
 :root[data-mode='light'] {

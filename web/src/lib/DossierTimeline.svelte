@@ -5,7 +5,7 @@
   // they survive any width. The drawing itself is DotLattice.
   import { fmtTs } from './state.svelte.js';
   import DotLattice from './DotLattice.svelte';
-  import { bucketize, KIND_ORDER, KIND_COLOR } from './lattice.js';
+  import { KIND_ORDER, KIND_COLOR } from './timeview.js';
 
   let { doc, history = [] } = $props();
 
@@ -127,12 +127,22 @@
     start: b.start, end: b.end,
     title: `blocked on ${b.on}: ${fmtDur(b.end - b.start)}, from ${fmtTs(new Date(b.start).toISOString())}`
   })));
-  const bucketsFor = (cols) => bucketize(signals, span.min, span.max, cols);
+  // the package consumes events {t, group, side}; signals carry kind + actor
+  const events = $derived(signals.map((e) => ({
+    t: t(e.ts),
+    group: e.kind,
+    side: e.actor_type === 'human' ? 'human' : 'agent',
+  })));
+  const LATTICE = {
+    groups: KIND_ORDER.map((k) => ({ name: k, color: KIND_COLOR[k] })),
+    sides: { human: 'up', agent: 'down' },
+    sideOpacity: { human: 1, agent: 0.55 },
+  };
 </script>
 
 {#if span}
   <div class="dtl" data-testid="dossier-timeline">
-    <DotLattice {span} {bucketsFor} {ticks} {runs} bind:quantum label="ticket timeline: signals per column, human above the line, agents below" />
+    <DotLattice {span} {events} {...LATTICE} {ticks} {runs} bind:quantum label="ticket timeline: signals per column, human above the line, agents below" />
 
     <!-- the numbers, in text, whatever the width -->
     <div class="chain">
