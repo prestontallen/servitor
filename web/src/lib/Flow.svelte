@@ -8,7 +8,6 @@
 
   const flow = $derived(foldFlow(history));
   const svg = $derived(flow?.ok ? svgFlow(layoutFlow(flow)) : '');
-  const width = $derived(svg ? Number(svg.match(/width="(\d+)"/)?.[1] || 0) : 0);
 </script>
 
 {#if flow?.ok}

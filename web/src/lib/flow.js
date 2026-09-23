@@ -56,11 +56,9 @@ export function layoutFlow(f) {
   if (!f || !f.ok) return null;
   const nodes = f.nodes.map((n) => ({ ...n }));
   const index = new Map(nodes.map((n, i) => [n.id, i]));
-  const outs = nodes.map(() => []);
   const ins = nodes.map(() => []);
   for (const e of f.edges) {
     if (!index.has(e.from) || !index.has(e.to)) continue;
-    outs[index.get(e.from)].push(index.get(e.to));
     ins[index.get(e.to)].push(index.get(e.from));
   }
   // longest-path rank FROM sources (rank 0 = leftmost): rank = 1 + max rank
@@ -128,10 +126,8 @@ const clip = (s, max) => (s.length > max ? s.slice(0, max - 1).trimEnd() + '…'
 
 export function svgFlow(l) {
   if (!l) return '';
-  const xs = l.nodes.map((n) => n.x);
-  const ys = l.nodes.map((n) => n.y);
-  const cols = Math.max(0, ...xs) + 1;
-  const rows = Math.max(0, ...ys) + 1;
+  const cols = Math.max(0, ...l.nodes.map((n) => n.x)) + 1;
+  const rows = Math.max(0, ...l.nodes.map((n) => n.y)) + 1;
   const W = PAD * 2 + cols * PITCH_X - (PITCH_X - BOX_W);
   const H = PAD * 2 + rows * PITCH_Y - (PITCH_Y - BOX_H);
   const at = (n) => ({ cx: PAD + n.x * PITCH_X + BOX_W / 2, cy: PAD + n.y * PITCH_Y + BOX_H / 2 });
