@@ -58,6 +58,17 @@ RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
 
 BINARIES=(servitor servitord servitor-mcp)
 
+# skills this version installs. The link loop and --check both read this list
+# so they can never disagree about what should be there. servitor-tone is
+# opt-in and deliberately outside it.
+SKILLS=(servitor servitor-dev ticket-flow servitor-plan servitor-review)
+
+# names from SKILLS that were not in the tree, collected by link_skill and
+# reported once at the end. A release older than this script is the usual
+# cause, and it is a warning, not a failure: by the time skills link, the
+# binaries and the service are installed and correct.
+SKIPPED_SKILLS=()
+
 # agent skill roots to try; each skill links to <root>/<name>
 SKILL_TARGETS=(
   "${HOME}/.hermes/skills"
@@ -199,8 +210,25 @@ fi
 TONE_ASKED=1
 
 link_skill() {
-  # link_skill NAME: symlink skills/NAME into every detected agent skill root
-  local name="$1" root found=0
+  # link_skill NAME: symlink skills/NAME into every detected agent skill root.
+  # A name the tree does not carry is never linked: a dangling link is worse
+  # than no link, because the agent lists the skill and then cannot load it.
+  local name="$1" root found=0 dest
+  if [ ! -d "${REPO}/skills/${name}" ]; then
+    echo "warning: no ${name} skill in ${REPO}/skills — not linking it" >&2
+    SKIPPED_SKILLS+=("${name}")
+    for root in $(skill_roots); do
+      dest="${root}/${name}"
+      # an earlier install's link now points at nothing. Drop it, so the
+      # skill stops being listed. Only ever a symlink with no target: a real
+      # directory is someone else's and stays.
+      if [ -L "${dest}" ] && [ ! -e "${dest}" ]; then
+        echo "==> removing dangling ${name} link in ${root}"
+        rm -f "${dest}"
+      fi
+    done
+    return 0
+  fi
   for root in $(skill_roots); do
     echo "==> linking ${name} skill into ${root}"
     # older installs made <root>/servitor a real directory of file links
@@ -209,6 +237,42 @@ link_skill() {
     found=1
   done
   [ "${found}" -eq 1 ] || echo "warning: no agent skill directory found (looked in ${SKILL_TARGETS[*]})" >&2
+}
+
+report_skipped_skills() {
+  # what link_skill could not link, and what to do about it. Silent when
+  # everything linked.
+  local name
+  [ "${#SKIPPED_SKILLS[@]}" -gt 0 ] || return 0
+  {
+    echo
+    echo "warning: this install.sh names skills that are not in ${REPO}/skills:"
+    for name in "${SKIPPED_SKILLS[@]}"; do
+      echo "           ${name}"
+    done
+    echo "         nothing was linked for them. The usual cause is a release"
+    echo "         older than this script: install from the checkout with"
+    echo "         ./install.sh --from-source, or cut a release carrying them."
+  } >&2
+}
+
+check_skill_links() {
+  # Every declared skill must link into this tree AND resolve. A link with
+  # the right readlink and no target is exactly the drift --check exists to
+  # catch: the skill is listed for an agent that then cannot load it.
+  local dest b drift=0
+  for dest in $(skill_roots); do
+    for b in "${SKILLS[@]}"; do
+      if [ "$(readlink "${dest}/${b}" 2>/dev/null)" != "${REPO}/skills/${b}" ]; then
+        echo "drift: ${dest}/${b} is not linked to this checkout"
+        drift=1
+      elif [ ! -d "${dest}/${b}" ]; then
+        echo "drift: ${dest}/${b} links to ${REPO}/skills/${b}, which is not there"
+        drift=1
+      fi
+    done
+  done
+  return "${drift}"
 }
 
 hook_json() {
@@ -760,12 +824,7 @@ check() {
       fi
     done
   fi
-  for dest in $(skill_roots); do
-    for b in servitor servitor-dev ticket-flow servitor-plan servitor-review; do
-      [ "$(readlink "${dest}/${b}" 2>/dev/null)" = "${REPO}/skills/${b}" ] \
-        || { echo "drift: ${dest}/${b} is not linked to this checkout"; drift=1; }
-    done
-  done
+  check_skill_links || drift=1
   svc_installed || { echo "drift: $(svc_file) differs from what deploy/ renders"; drift=1; }
   if [ -d "${HOME}/.claude" ] && ! hook_json check; then
     echo "drift: no SessionStart hook running '${HOOK_CMD}' in ${CLAUDE_SETTINGS} (run install.sh)"
@@ -819,10 +878,11 @@ fi
 # schema must be current before the daemon restarts onto it; use the file's
 # DSN (may have just been written by --dsn)
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
-for s in servitor servitor-dev ticket-flow servitor-plan servitor-review; do link_skill "${s}"; done
+for s in "${SKILLS[@]}"; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 install_hook
 restart
 wait_healthy
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
+report_skipped_skills

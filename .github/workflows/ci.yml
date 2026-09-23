@@ -1,6 +1,7 @@
 # Every PR must build. The Go packages embed the built GUI (internal/api
 # static), so vite build runs first. go test skips DB-backed tests when no
 # Postgres is reachable; it still catches compile errors and pure-logic tests.
+# tests/install-*.sh cover install.sh, which no go test reaches.
 name: ci
 on:
   pull_request:
@@ -22,3 +23,7 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      # install.sh is shell and no go test reaches it; these stub the network,
+      # the service manager and HOME, so they run anywhere
+      - run: ./tests/install-release.sh
+      - run: ./tests/install-darwin.sh
