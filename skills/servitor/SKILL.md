@@ -25,6 +25,11 @@ carry on without blocking; do NOT retry in a loop.
 
 With no focus ticket, run `servitor board` to see queued/active/blocked work.
 
+If the hook's first line is `register: servitor-tone ON`, the tone skill was
+linked at install and is mandatory for every report in this session: load
+`servitor-tone` before your first report and keep it active. It is optional
+only at install time, never once linked.
+
 ## The model
 
 - **Identity**: every ticket and sub-item has a ULID. Sub-items are addressed

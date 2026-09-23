@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -204,5 +205,35 @@ func TestPreflight(t *testing.T) {
 	}
 	if d := time.Since(start); d > 4*time.Second {
 		t.Errorf("preflight took %v, budget is 4s", d)
+	}
+}
+
+// the tone skill linked in any agent skill root turns the register line on,
+// and it is the first line so it cannot be missed
+func TestPreflightRegisterLine(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if toneInstalled(home) {
+		t.Fatal("empty home must not report the tone skill")
+	}
+	var b bytes.Buffer
+	preflight(&b, t.TempDir(), "agent:test", nil)
+	if strings.Contains(b.String(), "register:") {
+		t.Errorf("register line without the link:\n%s", b.String())
+	}
+	for _, root := range []string{".claude/skills", ".hermes/skills"} {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		if err := os.MkdirAll(filepath.Join(home, root, "servitor-tone"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if !toneInstalled(home) {
+			t.Errorf("%s: link not detected", root)
+		}
+		b.Reset()
+		preflight(&b, t.TempDir(), "agent:test", nil)
+		if !strings.HasPrefix(b.String(), "register: servitor-tone ON\n") {
+			t.Errorf("%s: register line must come first:\n%s", root, b.String())
+		}
 	}
 }

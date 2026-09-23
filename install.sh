@@ -13,8 +13,9 @@
 #
 # Usage: ./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 #   --check    report drift and exit 1 if the deployed state differs
-#   --tone     link the optional servitor-tone skill (terse procedural
-#              reporting register) into every detected agent skill directory
+#   --tone     link the servitor-tone skill (terse procedural reporting
+#              register) into every detected agent skill directory. Opt-in
+#              here; once linked, the hook announces it and it is mandatory
 #   --no-tone  skip the tone-skill prompt (non-interactive installs)
 #   --dsn URL  write SERVITOR_DSN into ~/.config/servitor/servitord.env
 #              (mode 0600) and run `servitord apply-schema` against it
