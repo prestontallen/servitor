@@ -1,8 +1,8 @@
 # Plan and review events: the shapes the skills write and the GUI reads
 
-`servitor.plan` and `servitor.review` write structure, not prose. These are
-the payloads. The ticket page and the board read exactly these keys, so a
-change here is a change to both skills and the GUI together.
+`servitor-plan` and `servitor-review` write structure, not prose. These are
+the payloads. The ticket page reads exactly these keys, so a change here is
+a change to the skills and the GUI together.
 
 Everything lands in ledger payload jsonb or `subitems.fields` jsonb. No
 schema migration is needed for any of it.
@@ -40,12 +40,37 @@ Passing or failing a criterion carries how it was proven:
 
 ```
 servitor subitem <ref> <criterion-prefix> --state pass --evidence "go test ./internal/store -run TestCtxReadContract"
-servitor subitem <ref> <criterion-prefix> --state fail --evidence "board card shows no verdict mark on staging"
+servitor subitem <ref> <criterion-prefix> --state fail --evidence "board card shows no plan mark on staging"
 ```
 
 `evidence` is stored in `subitems.fields.evidence` and surfaces as
 `criteria[].evidence` in `servitor ctx`. The Contract card prints it beside
 the check. Omitting it is allowed; the card then shows only who and when.
+
+## finding (subitem)
+
+One subitem per review finding, so each can be closed by identity later.
+Written by `servitor-review` in both phases.
+
+```
+servitor add <ref> finding "src=self internal/store/read.go:L212: scope: touches List, which Out excludes. Revert it or amend the contract."
+servitor add <ref> finding "src=octocat https://github.com/o/r/pull/9#discussion_r1 cmd/x.go:L40: check: no runnable check for the parser. Add one assert-based test."
+servitor subitem <ref> <finding-prefix> --state applied
+```
+
+- Body grammar: `src=<self|reviewer handle> [<comment url>] <loc>: <tag>
+  <what>. <fix>.` The source and URL ride in the body for now; `servitor
+  add` cannot set fields. Ceiling: when a view needs to filter findings by
+  source, add a field flag to `servitor add` and move them.
+- `loc` is `file:L12`, `file:L12-38`, or a ticket location such as
+  `contract` or `branch`.
+- Tags: `criterion`, `scope`, `seam`, `branch`, `stray`, `check`, `marker`,
+  `migration`, then ponytail-review's `delete`, `stdlib`, `native`, `yagni`,
+  `shrink`. A finding without a fix is not a finding.
+- `state` is null while open, then `applied`, `rejected` or `escalated`.
+  A rejection is also a `servitor decide` with a why. An accepted external
+  finding the agent should have caught is also a `feedback` event with
+  `source: human`.
 
 ## review (ledger event)
 
@@ -55,37 +80,27 @@ earlier runs stay in the ledger with a run count.
 ```
 servitor log <ref> review '{
   "verdict": "present",
-  "summary": "3/3 criteria pass, 1 finding",
-  "findings": [
-    {"loc": "internal/store/read.go:L212", "tag": "scope", "what": "touches List, which the Out list excludes", "fix": "revert the List change or amend the contract"}
-  ]
+  "summary": "3/3 criteria pass, 0 unverified, 1 finding",
+  "phase": "self"
 }'
 ```
 
 - `verdict` is required and is `present` or `hold`. `present` means the
   work can go to the `presented` gate. `hold` means it cannot yet.
-- `summary` is one line. For tickets with criteria it is the scorecard
-  (`N/M criteria pass, K unverified`). For tier 0 it is pass or fail
-  against the intake note's done-when line.
-- `findings` is an array, possibly empty. Empty with `present` is the null
-  result (`Lean already. Ship.`).
-- Each finding: `loc` (`file:L12` or `file:L12-38`; may be a ticket-level
-  location like `contract` or `branch`), `tag` (the skill's tag vocabulary,
-  free text here), `what` (one clause), `fix` (one clause, required; a
-  finding without a fix is not a finding).
-- Criterion pass/fail is written with `subitem.set` before the review event,
-  not inside it. The review event is the verdict; the criteria are the
-  scorecard.
+- `summary` is one line: the scorecard. For tickets with criteria it is
+  `N/M criteria pass, K unverified, F findings`. For tier 0 it is pass or
+  fail against the intake note's done-when line.
+- `phase` is `self` (the agent's own diff, before presenting) or
+  `external` (after triaging reviewer comments on the PR).
+- Findings are NOT in the payload. They are `finding` subitems, above.
+  Criterion pass/fail is written with `subitem.set` before the review
+  event. The review event is the verdict; the criteria and findings are
+  the scorecard.
 
 `servitor ctx` exposes the latest run as `review` with `actor`, `ts` and
 `runs` (the count of review events on the ticket). That is the skill's
 read-back; the GUI reserves no space for review (decided 2026-09-22) and
 the ledger fold is where a human sees the runs.
-
-Open direction, not yet built: once the review skill also triages external
-PR review, each finding needs its own disposition (applied, rejected with a
-why, escalated). That means `finding` subitems with a `source`, not an
-array inside the run event. Settle it with the skill, not before.
 
 ## What the GUI reserves
 
