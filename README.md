@@ -24,17 +24,22 @@ trigger. One transaction per `append_event`.
   derives from the latest gate — never set by hand.
 - Events carry one actor of record: `human:`, `agent:`, or `system`.
   Judgment events carry human actors; the store enforces it.
+- Arcs group tickets: an arc is any ticket another points at via
+  `parent=<arc-ulid>`. Rollup status, member count and last activity are
+  derived, never set by hand.
+  `source`/`source_ref`/`depends`/`area` are free fields;
+  history events carry a derived `class` (signal|transition).
 
 ## Usage
 
 Agents interact only via the CLI or MCP — never the database, never the
-files. Core verbs:
+files.
 
 ```
 servitor hook [ref]       SessionStart hook: preflight header + ctx; always exits 0
 servitor ctx [ref]        ticket aggregate, JSON only; always exits 0
 servitor board            queued/active/blocked, rank-ordered
-servitor arcs             arcs (tickets with members) with derived rollups
+servitor arcs             arcs with derived rollups
 servitor new --slug S     -> ticket ULID
 servitor set <ref> ...    status / PR / free field=value pairs
 servitor log <ref> note   append an event
@@ -42,42 +47,46 @@ servitor gate <ref> <g>   pass a gate
 servitor history <ref>    full event timeline
 ```
 
-Arcs group tickets: an arc is any ticket another ticket points at via
-`servitor set <ref> parent=<arc-ulid>` (create the arc as a plain ticket
-first). Rollup status, member count and last activity are derived, never
-set by hand. `source`/`source_ref`/`depends`/`area` are free fields set
-the same way; history events carry a derived `class` (signal|transition).
+Orient on `board`, classify at intake, log as you go, pass gates at
+handoffs, record blockers as `blocked --on <party>`. Never fake done.
 
-Intended workflow: orient on `board`, classify the work at intake, work
-tickets with notes as you go, pass gates at handoffs, and record blockers
-as `blocked --on <party>` — never fake done.
+Agents carrying the optional `servitor-tone` skill (`--tone` at install)
+report in a fixed grammar — state, result, obstruction, one line each,
+`no change.` when there is none:
+
+```
+skill-link-verify · done · shipped
+done: install.sh links no skill the tree does not carry
+evidence: 43 assertions; --check exits 0
+next: nothing. Branch and worktree released.
+```
 
 ## Install
 
 ```
-./install.sh [--check] [--tone|--no-tone] [--dsn URL] [--token TOKEN]
+./install.sh [--check] [--from-source] [--version TAG]
+             [--tone|--no-tone] [--dsn URL] [--token TOKEN]
 ```
 
-Builds the binaries, installs them to `~/.local/bin`, restarts the
-`servitord` systemd unit, and links the skill into detected agent skill
-directories. `--check` reports drift. `--tone` additionally links the
-optional reporting-register skill.
+Downloads the release matching this host, verifies its checksum, and
+installs into `~/.local/bin`; `--from-source` builds from the checkout
+instead and `--version` pins a tag. Then restarts the `servitord` unit and
+links the skills into detected agent skill directories — skipping, with a
+warning, any the tree does not carry. `--check` reports drift.
 
-The daemon reads its secrets from `~/.config/servitor/servitord.env`
-(mode 0600), which install.sh creates on first run — from `--dsn` when
-given, otherwise by migrating the DSN out of an older unit. Reruns
-without `--dsn` keep the existing file. `servitord apply-schema` runs
-against that DSN before the restart, so a pending migration never
-leaves the daemon 500ing on new columns; if apply-schema fails, install
-aborts without restarting. `servitor-mcp` picks up `SERVITOR_DSN` /
-`SERVITOR_TOKEN` by sourcing the same env file.
+Secrets live in `~/.config/servitor/servitord.env` (mode 0600), created on
+first run from `--dsn` or by migrating the DSN out of an older unit; reruns
+without `--dsn` keep it. `servitord apply-schema` runs against that DSN
+before the restart, so a pending migration never leaves the daemon 500ing
+on new columns; if it fails, install aborts without restarting.
+`servitor-mcp` sources the same file.
 
 ## Environment
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `SERVITOR_API` | CLI target | `http://localhost:8181` |
-| `SERVITOR_DSN` | Postgres/TimescaleDSN (daemon, MCP) | local `servitor` DB |
+| `SERVITOR_DSN` | Postgres/Timescale DSN (daemon, MCP) | local `servitor` DB |
 | `SERVITOR_ADDR` | daemon listen address | `:8181` |
 | `SERVITOR_TOKEN` | bearer-token auth for the API | off |
 | `SERVITOR_ACTOR` | actor of record | `agent:cli` |
@@ -85,15 +94,15 @@ aborts without restarting. `servitor-mcp` picks up `SERVITOR_DSN` /
 
 ## Database bootstrap (one-time)
 
-The `servitor` DB role must own the schema — servitord, servitor-mcp and
-`servitord apply-schema` run under it, and later migrations need ALTER
-rights. On a fresh DB, as a superuser (once, idempotent):
+The `servitor` role must own the schema — servitord, servitor-mcp and
+`apply-schema` run under it, and migrations need ALTER rights. On a fresh
+DB, as a superuser (once, idempotent):
 
 ```
 psql -U postgres -d servitor -f deploy/grants.sql
 ```
 
-Then `SERVITOR_DSN` points at the `servitor` role; the daemon never needs
+`SERVITOR_DSN` then points at the `servitor` role; the daemon never needs
 admin credentials.
 
 ---
