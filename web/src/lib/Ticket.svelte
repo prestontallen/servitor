@@ -1,4 +1,7 @@
 <script>
+  // The dossier: one ticket as framed cards over the folded ledger
+  // (dossier.js). Gates as a ✠ strip, the contract as a signed form, the
+  // criteria as a scorecard with glyphs, then the ledger newest first.
   import { get } from './api.svelte.js';
   import { view, arcs, openArc, kindGlyph, fmtTs, relTs, eventText } from './state.svelte.js';
   import { buildDossier } from './dossier.js';
@@ -35,16 +38,15 @@
   const parentArc = $derived(doc?.parent ? arcs.list.find((a) => a.ulid === doc.parent) : null);
   const fields = $derived(doc?.fields || {});
   // provenance, then the handoff record (skills/servitor: Handoff), in a fixed order
-  const prov = $derived(['source', 'source_ref', 'depends', 'area', 'branch', 'worktree', 'head', 'pushed', 'staging', 'checkpoint', 'next'].filter((k) => fields[k] !== undefined && fields[k] !== ''));
+  const prov = $derived(['source', 'source_ref', 'depends', 'area', 'branch', 'worktree', 'head', 'pushed', 'staging', 'checkpoint'].filter((k) => fields[k] !== undefined && fields[k] !== ''));
 
   const d = $derived(doc ? buildDossier(doc, history) : null);
 
-  // phase stepper: the four card words, lit up to the latest gate
-  const PHASES = ['shaping', 'building', 'checking', 'shipping'];
-  const GATE_BEFORE = { building: 'contract_approved', checking: 'presented', shipping: 'shipped' };
+  // the three gates, lit as they pass
+  const GATES = ['contract_approved', 'presented', 'shipped'];
   const gateAt = $derived(Object.fromEntries((doc?.gates || []).map((g) => [g.gate, g])));
-  const phaseIdx = $derived(doc?.card_word ? PHASES.indexOf(doc.card_word) : 0);
   const terminal = $derived(doc && ['done', 'dropped'].includes(doc.status));
+  const GLYPH = { queued: '◇', active: '◆', blocked: '☠', done: '■', dropped: '✕' };
 
   const CLAMP_AT = 220;
   const isLong = (s) => (s || '').length > CLAMP_AT;
@@ -59,6 +61,15 @@
     if (h < 48) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
     const dd = Math.floor(h / 24);
     return h % 24 ? `${dd}d ${h % 24}h` : `${dd}d`;
+  }
+
+  // criteria as a block meter, the same glyphs the board uses
+  const CELLS = 12;
+  function meter(pass, fail, total) {
+    if (!total) return null;
+    const p = Math.round((CELLS * pass) / total);
+    const f = Math.round((CELLS * fail) / total);
+    return { pass: '█'.repeat(p), fail: '█'.repeat(f), off: '░'.repeat(Math.max(0, CELLS - p - f)) };
   }
 
   function togglePill(kind) {
@@ -88,6 +99,7 @@
   });
 
   const TAG_CLASS = { correction: 'fail', rework: 'warn', stall: 'warn', drift: 'dim' };
+  const tsShort = (ts) => new Date(ts).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 </script>
 
 {#snippet clamp(key, text)}
@@ -105,7 +117,7 @@
   </span>
 {/snippet}
 
-<button class="back" onclick={() => doc?.parent ? openArc(doc.parent) : (location.hash = '#/arcs')}>← back</button>
+<button class="back" onclick={() => doc?.parent ? openArc(doc.parent) : (location.hash = '#/board')}>← {doc?.parent ? 'arc' : 'board'}</button>
 
 {#if error}
   <p class="muted">unreachable: {error}</p>
@@ -113,35 +125,36 @@
   <p class="muted">querying…</p>
 {:else}
   <article class="dossier">
-    <!-- ================= header: state, phase, stamps, timeline ================= -->
-    <header class="panel head s-{doc.status}">
-      <div class="titlerow">
-        <span class="status s-{doc.status}">{doc.status}{#if doc.blocked_on} · on {doc.blocked_on}{/if}</span>
-        <span class="slug muted">{doc.slug}</span>
-        <!-- phase: four segments lit up to the card word; the word itself only while in flight -->
-        <span class="phase" title="phase: {PHASES[phaseIdx]}{terminal ? ', ' + doc.status : ''}">
-          <span class="segs">
-            {#each PHASES as ph, i (ph)}
-              {@const g = gateAt[GATE_BEFORE[ph]]}
-              {@const state = terminal || i === phaseIdx ? 'lit' : i < phaseIdx ? 'past' : 'next'}
-              <i class="seg {state}" title={g ? `${ph}: ${GATE_BEFORE[ph].replace('_approved', '')} by ${short(g.actor)} · ${fmtTs(g.ts)}` : i === 0 ? `${ph}: created` : `${ph}: not reached`}></i>
-            {/each}
-          </span>
-          {#if !terminal}
-            <span class="word">{PHASES[phaseIdx]}</span>
-            {#if GATE_BEFORE[PHASES[phaseIdx + 1]]}<span class="muted">· next {GATE_BEFORE[PHASES[phaseIdx + 1]].replace('_approved', '')}</span>{/if}
-          {/if}
-        </span>
-      </div>
-      <h2>{doc.title || doc.slug}</h2>
+    <!-- ================= header: identity, gates, facts, timeline ================= -->
+    <header class="frame head s-{doc.status}">
+      <span class="cap">Dossier{#if parentArc} · <button class="caplink" onclick={() => openArc(parentArc.ulid)}>arc {parentArc.slug}</button>{/if}</span>
+      <span class="cap right">{doc.ulid}</span>
+      <h2 class="goth">{doc.slug}</h2>
+      <div class="title">{doc.title || doc.slug}</div>
 
-      <div class="facts">
-        {#if parentArc}<button class="fact link" onclick={() => openArc(parentArc.ulid)}>arc · {parentArc.slug}</button>{/if}
-        {#if doc.active_by}<span class="fact">held by <b>{doc.active_by}</b> {relTs(doc.active_since)}</span>{/if}
-        {#if doc.blocked_on}<span class="fact fail">blocked {relTs(doc.blocked_since)}</span>{/if}
-        {#each prov as k (k)}<span class="fact">{k} · {fields[k]}</span>{/each}
-        {#if doc.pr}<a class="fact link" href={doc.pr} target="_blank" rel="noreferrer">pr · {doc.pr.replace(/^https?:\/\/github\.com\//, '')}</a>{/if}
-        <span class="fact">updated {relTs(doc.updated_at)}</span>
+      <div class="gates">
+        {#each GATES as g (g)}
+          {@const hit = gateAt[g]}
+          <span class="gate" class:hit title={hit ? `${g} by ${hit.actor} · ${fmtTs(hit.ts)}` : `${g}: not yet`}>{g.replace('_', ' ')}</span>
+        {/each}
+        {#if terminal}<span class="gate end s-{doc.status}">{GLYPH[doc.status]} {doc.status}</span>{/if}
+      </div>
+
+      <div class="kv">
+        <span class="k">status</span>
+        <span>
+          <span class="st s-{doc.status}">{GLYPH[doc.status]} {doc.status}{#if doc.blocked_on} · on {doc.blocked_on} {relTs(doc.blocked_since)}{/if}</span>
+          {#if doc.card_word}· card word <span class="phos">{doc.card_word}</span>{/if}
+          {#if doc.active_by}· held by <b>{doc.active_by}</b> {relTs(doc.active_since)}{/if}
+        </span>
+        {#if fields.next}<span class="k">next</span><span class="phos">{fields.next}</span>{/if}
+        {#if prov.length}
+          <span class="k">handoff</span>
+          <span class="facts">{#each prov as k (k)}<span class="fact"><i>{k}</i> {fields[k]}</span>{/each}</span>
+        {/if}
+        <span class="k">pr</span>
+        <span>{#if doc.pr}<a href={doc.pr} target="_blank" rel="noreferrer">{doc.pr.replace(/^https?:\/\/github\.com\//, '')}</a>{:else}<span class="muted">none yet</span>{/if}</span>
+        <span class="k">updated</span><span class="muted">{relTs(doc.updated_at)}</span>
       </div>
 
       <div class="strip"><DossierTimeline {doc} {history} /></div>
@@ -150,19 +163,10 @@
     <!-- ================= contract: a signed form ================= -->
     {#if d.contract}
       {@const c = d.contract}
-      <section class="panel inst contract" class:draft={!c.approved}>
-        <div class="stamp" class:approved={c.approved}>
-          {#if c.approved}
-            <b>approved</b><span>{short(c.approved.actor)} · {new Date(c.approved.ts).toLocaleDateString()}</span>
-          {:else}
-            <b>draft</b><span>not yet approved</span>
-          {/if}
-        </div>
-        <h3>Contract
-          {#if c.tier}<span class="chip">tier {c.tier}</span>{/if}
-          {#if c.complexity}<span class="chip">{c.complexity} complexity</span>{/if}
-          {#if c.versions > 1}<span class="chip">v{c.versions}</span>{/if}
-        </h3>
+      {@const m = meter(c.tally.pass, c.tally.fail, c.criteria.length)}
+      <section class="frame inst contract" class:draft={!c.approved}>
+        <span class="cap">Contract{#if c.tier} · tier {c.tier}{/if}{#if c.complexity} · {c.complexity}{/if}{#if c.versions > 1} · v{c.versions}{/if}</span>
+        <span class="cap right" class:verd={!!c.approved}>{#if c.approved}✠ approved · {short(c.approved.actor)} · {new Date(c.approved.ts).toLocaleDateString()}{:else}draft · awaiting sanction{/if}</span>
         <div class="src">from {c.source}</div>
 
         {#if c.intent}
@@ -171,13 +175,13 @@
 
         {#if c.in.length || c.out.length}
           <div class="scope">
-            <div class="col in">
-              <span class="label">In</span>
-              <ul>{#each c.in as it}<li>{it}</li>{/each}</ul>
+            <div class="col">
+              <span class="label in">In</span>
+              <ul class="glyphs">{#each c.in as it}<li><span class="g phos">▸</span><span>{it}</span></li>{/each}</ul>
             </div>
-            <div class="col out">
+            <div class="col">
               <span class="label">Out</span>
-              <ul>{#each c.out as it}<li>{it}</li>{/each}</ul>
+              <ul class="glyphs out">{#each c.out as it}<li><span class="g">✕</span><span>{it}</span></li>{/each}</ul>
             </div>
           </div>
         {/if}
@@ -186,18 +190,16 @@
           <div class="field">
             <div class="crithead">
               <span class="label">Criteria</span>
-              <span class="meter" title="{c.tally.pass} of {c.criteria.length} pass">
-                <i class="pass" style="width:{(c.tally.pass / c.criteria.length) * 100}%"></i>
-                <i class="fail" style="width:{(c.tally.fail / c.criteria.length) * 100}%"></i>
-              </span>
+              {#if m}<span class="meter" title="{c.tally.pass} of {c.criteria.length} pass"><b class="verd">{m.pass}</b><b class="blood">{m.fail}</b><span class="off">{m.off}</span></span>{/if}
               <span class="muted">{c.tally.pass} of {c.criteria.length} pass{#if c.tally.fail} · {c.tally.fail} fail{/if}</span>
             </div>
-            <ul class="criteria">
+            <ul class="glyphs criteria">
               {#each c.criteria as cr, i (i)}
                 <li class="st-{cr.state}">
-                  <span class="box">{cr.state === 'pass' ? '✓' : cr.state === 'fail' ? '✕' : ''}</span>
-                  <span class="crbody">{cr.body}</span>
-                  {#if cr.evidence}<span class="evidence">← {#if cr.evidence.actor}proven by {short(cr.evidence.actor)} {relTs(cr.evidence.ts)}{:else}proven{/if}{#if cr.evidence.text}: <i>{cr.evidence.text}</i>{/if}</span>{/if}
+                  <span class="g">{cr.state === 'pass' ? '■' : cr.state === 'fail' ? '☠' : '□'}</span>
+                  <span class="crbody">{cr.body}
+                    {#if cr.evidence}<span class="evidence">— {#if cr.evidence.actor}proven by {short(cr.evidence.actor)} {relTs(cr.evidence.ts)}{:else}proven{/if}{#if cr.evidence.text}: <i>{cr.evidence.text}</i>{/if}</span>{/if}
+                  </span>
                 </li>
               {/each}
             </ul>
@@ -208,33 +210,33 @@
           <div class="field"><span class="label">Verified by</span><div>{@render clamp('verif', c.verification)}</div></div>
         {/if}
         {#if c.risks}
-          <div class="field"><span class="label">Risks</span><div>{@render clamp('risks', c.risks)}</div></div>
+          <div class="field"><span class="label">Risks</span><div class="muted">{@render clamp('risks', c.risks)}</div></div>
         {/if}
         {#if c.amendments.length}
           <div class="amend">
             {#each c.amendments as a (a.id)}
-              <div class="arow"><span class="label">amended</span>{@render sig(a.actor, a.actor.startsWith('human:'), a.ts)}<div>{@render clamp('amend-' + a.id, a.body)}</div></div>
+              <div class="arow"><span class="label warn">amended</span>{@render sig(a.actor, a.actor.startsWith('human:'), a.ts)}<div>{@render clamp('amend-' + a.id, a.body)}</div></div>
             {/each}
           </div>
         {/if}
       </section>
     {:else}
-      <section class="panel inst contract empty">
-        <h3>Contract</h3>
-        <div class="src">none yet · servitor.plan fills this</div>
+      <section class="frame inst empty">
+        <span class="cap">Contract</span>
+        <div class="src">none yet · servitor-plan fills this</div>
       </section>
     {/if}
 
     <!-- ================= plan: a track ================= -->
     {#if d.plan}
       {@const p = d.plan}
-      <section class="panel inst plan">
-        <h3>Plan <span class="chip">{p.done} of {p.steps.length} done</span></h3>
-        <div class="src">from {p.source}</div>
+      <section class="frame inst plan">
+        <span class="cap">Plan · {p.done} of {p.steps.length} done</span>
+        <span class="cap right">from {p.source}</span>
         <ol class="track">
           {#each p.steps as s, i (i)}
             <li class:done={!!s.state} class:now={i === p.current}>
-              <span class="node">{s.state ? '✓' : i + 1}</span>
+              <span class="g">{s.state ? '■' : i === p.current ? '▶' : '□'}</span>
               <span class="sbody">{s.body}</span>
               <span class="smeta">
                 {#if s.done}{short(s.done.actor)}{#if s.took != null} · {fmtDur(s.took)}{/if}
@@ -245,24 +247,23 @@
         </ol>
       </section>
     {:else}
-      <section class="panel inst plan empty">
-        <h3>Plan</h3>
-        <div class="src">none yet · servitor.plan fills this</div>
+      <section class="frame inst empty">
+        <span class="cap">Plan</span>
+        <div class="src">none yet · servitor-plan fills this</div>
       </section>
     {/if}
 
     <!-- ================= flow: agent-submitted flowchart ================= -->
     {#if d.flow?.ok}
       {@const fl = d.flow}
-      <section class="panel inst flow">
-        <h3>Flow <span class="chip">{fl.nodes.length} nodes</span></h3>
-        <div class="src">from flow.set events · v{fl.versions} · {fl.actor}</div>
+      <section class="frame inst flow">
+        <span class="cap">Flow · {fl.nodes.length} nodes</span>
+        <span class="cap right">flow.set · v{fl.versions} · {fl.actor}</span>
         <Flow {history} />
       </section>
     {:else if d.flow}
-      <section class="panel inst flow">
-        <h3>Flow</h3>
-        <div class="src">from flow.set events</div>
+      <section class="frame inst flow">
+        <span class="cap">Flow</span>
         <p class="muted" data-testid="flow-error">flow unparsable: {d.flow.error}</p>
       </section>
     {/if}
@@ -270,18 +271,15 @@
     <div class="pair">
       <!-- ================= decisions: forks taken ================= -->
       {#if d.decisions}
-        <section class="panel inst decisions">
-          <h3>Decisions <span class="chip">{d.decisions.items.length}</span></h3>
-          <div class="src">from {d.decisions.source}</div>
-          <ul class="forks">
+        <section class="frame inst decisions">
+          <span class="cap">Decisions · {d.decisions.items.length}</span>
+          <span class="cap right">from {d.decisions.source}</span>
+          <ul class="glyphs forks">
             {#each d.decisions.items as dc, i (i)}
               <li>
-                <span class="fork">⑂</span>
+                <span class="g phos">◆</span>
                 <div class="fbody">
-                  <div class="choice">
-                    <b>{dc.chosen}</b>
-                    {#if dc.rejected}<s class="muted">{dc.rejected}</s>{/if}
-                  </div>
+                  <div class="choice"><b>{dc.chosen}</b>{#if dc.rejected}<s class="muted">{dc.rejected}</s>{/if}</div>
                   {#if dc.why}<div class="why">because {dc.why}</div>{/if}
                   <div class="sigline" class:missing={!dc.actor || dc.actor_type !== 'human'}>
                     {#if dc.actor}— {@render sig(dc.actor, dc.actor_type === 'human', dc.ts)}{:else}— unsigned{/if}
@@ -295,16 +293,16 @@
 
       <!-- ================= questions: open loops ================= -->
       {#if d.questions}
-        <section class="panel inst questions">
-          <h3>Questions {#if d.questions.open}<span class="chip warn">{d.questions.open} open</span>{:else}<span class="chip">all answered</span>{/if}</h3>
-          <div class="src">from {d.questions.source}</div>
-          <ul class="threads">
+        <section class="frame inst questions" class:alarm={d.questions.open > 0}>
+          <span class="cap">Questions{#if d.questions.open} · {d.questions.open} open{/if}</span>
+          <span class="cap right">{#if !d.questions.open}all answered · {/if}from {d.questions.source}</span>
+          <ul class="glyphs threads">
             {#each d.questions.items as q, i (i)}
               <li class:open={!q.answer}>
-                <span class="qmark">{q.answer ? '!' : '?'}</span>
+                <span class="g" class:blood={!q.answer}>{q.answer ? '!' : '?'}</span>
                 <div class="qbody">
                   <div>{@render clamp('q-' + i, q.body)}</div>
-                  <div class="qmeta">
+                  <div class="qmeta" class:blood={!q.answer}>
                     {#if q.answer}
                       answered{#if q.answer.actor} by {short(q.answer.actor)}{/if}{#if q.openFor != null} after {fmtDur(q.openFor)}{/if}
                     {:else}
@@ -323,20 +321,24 @@
     <!-- ================= feedback: tally, then callouts ================= -->
     {#if d.feedback}
       {@const f = d.feedback}
-      <section class="panel inst feedback">
-        <h3>Feedback</h3>
-        <div class="src">from {f.source}</div>
-        <div class="tally">
-          {#each Object.entries(f.byTag) as [tag, n] (tag)}
-            <span class="tcount {TAG_CLASS[tag] || 'dim'}"><b>{n}</b> {tag}</span>
-          {/each}
-          <span class="tsplit muted">{#each Object.entries(f.bySource) as [s, n], i}{i ? ' · ' : ''}{n} from {s}{/each}</span>
-        </div>
-        <ul class="callouts">
+      <section class="frame inst feedback alarm">
+        <span class="cap">Feedback · {f.items.length}</span>
+        <span class="cap right">{#each Object.entries(f.bySource) as [s, n], i}{i ? ' · ' : ''}{n} from {s}{/each}</span>
+        {#if Object.keys(f.byTag).length}
+          <div class="tally">
+            {#each Object.entries(f.byTag) as [tag, n] (tag)}
+              <span class="tcount {TAG_CLASS[tag] || 'dim'}"><b>{n}</b> {tag}</span>
+            {/each}
+          </div>
+        {/if}
+        <ul class="glyphs callouts">
           {#each f.items as it, i (i)}
             <li class={TAG_CLASS[it.tag] || 'dim'}>
-              <div class="chead">{#if it.tag}<span class="chip {TAG_CLASS[it.tag] || ''}">{it.tag}</span>{/if}{#if it.source}<span class="muted">from {it.source}</span>{/if}{@render sig(null, false, it.ts)}</div>
-              <div>{@render clamp('fb-' + i, it.finding)}</div>
+              <span class="g" class:blood={it.source === 'human'}>⚠</span>
+              <div>
+                <div class="chead">{#if it.tag}<span class="badge">{it.tag}</span>{/if}<span class="src-inline" class:blood={it.source === 'human'}>{it.source || ''}</span>{@render sig(null, false, it.ts)}</div>
+                <div>{@render clamp('fb-' + i, it.finding)}</div>
+              </div>
             </li>
           {/each}
         </ul>
@@ -345,9 +347,9 @@
 
     <!-- ================= corrections: diffs against the record ================= -->
     {#if d.corrections}
-      <section class="panel inst corrections">
-        <h3>Corrections <span class="chip">{d.corrections.items.length}</span></h3>
-        <div class="src">from {d.corrections.source}</div>
+      <section class="frame inst corrections">
+        <span class="cap">Corrections · {d.corrections.items.length}</span>
+        <span class="cap right">from {d.corrections.source}</span>
         <ul class="diffs">
           {#each d.corrections.items as cr, i (i)}
             <li>
@@ -362,43 +364,45 @@
     {/if}
 
     {#if d.links}
-      <section class="panel inst links">
-        <h3>Links</h3>
-        <ul class="linklist">{#each d.links.items as l}<li><a href={l.url} target="_blank" rel="noreferrer">{l.url}</a></li>{/each}</ul>
+      <section class="frame inst links">
+        <span class="cap">Links</span>
+        <ul class="glyphs">{#each d.links.items as l}<li><span class="g">↗</span><a href={l.url} target="_blank" rel="noreferrer">{l.url}</a></li>{/each}</ul>
       </section>
     {/if}
 
     <!-- ================= ledger: the feed ================= -->
-    <section class="panel inst ledger" class:open={ledgerOpen}>
-      <h3 class="fold">
+    <section class="frame inst ledger" class:open={ledgerOpen}>
+      <span class="cap">Ledger · {history.length}</span>
+      <div class="fold">
         <button class="toggle" onclick={() => { ledgerOpen = !ledgerOpen; if (!ledgerOpen) kindFilter = null; }}>
-          <span class="tri">{ledgerOpen ? '▾' : '▸'}</span> Ledger <span class="chip">{history.length}</span>
+          {ledgerOpen ? '▾ fold' : '▸ unfold'}
         </button>
         <span class="pills">
           {#each d.counts as [kind, n] (kind)}
             <button class="pill" class:active={ledgerOpen && kindFilter === kind} onclick={() => togglePill(kind)}>{kind} <b>{n}</b></button>
           {/each}
         </span>
-      </h3>
+      </div>
       {#if ledgerOpen}
         <ul class="history">
           {#each rows as r (r.id)}
             {#if r.type === 'day'}
               <li class="daysep"><span>{r.day}</span></li>
             {:else if r.type === 'signal'}
-              <li class="signal">
+              <li class="signal" class:human={r.e.actor_type === 'human'}>
+                <span class="ts" title={fmtTs(r.e.ts)}>{tsShort(r.e.ts)}</span>
                 <span class="hglyph">{kindGlyph(r.e.kind)}</span>
-                <span class="muted kind">{r.e.kind}</span>
-                <span class="line">{eventText(r.e)}</span>
-                {#if d.fed.has(r.e.id)}<span class="fedmark">→ {d.fed.get(r.e.id)}</span>{/if}
+                <span class="kind">{r.e.kind}</span>
+                <span class="line">{eventText(r.e)}{#if d.fed.has(r.e.id)}<span class="fedmark"> → {d.fed.get(r.e.id)}</span>{/if}</span>
                 <span class="actor" class:human={r.e.actor_type === 'human'}>{r.e.actor}</span>
-                <span class="meta-inline" title={fmtTs(r.e.ts)}>{relTs(r.e.ts)}</span>
               </li>
             {:else}
               <li class="transition">
-                <span class="muted kind">{r.e.kind}</span>
+                <span class="ts" title={fmtTs(r.e.ts)}>{tsShort(r.e.ts)}</span>
+                <span class="hglyph"></span>
+                <span class="kind">{r.e.kind}</span>
                 <span class="line muted">{eventText(r.e)}</span>
-                <span class="meta-inline" title={fmtTs(r.e.ts)}>{relTs(r.e.ts)}</span>
+                <span class="actor">{short(r.e.actor)}</span>
               </li>
             {/if}
           {/each}
@@ -409,198 +413,164 @@
 {/if}
 
 <style>
-  .back { margin-bottom: 12px; }
-  .dossier { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .back { margin-bottom: 14px; border: none; padding: 0; font-size: 11px; color: var(--phos-dim); min-height: 0; }
+  .back:hover { color: var(--phos); }
+  .dossier { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; font-size: 12px; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .pair:empty { display: none; }
+  .frame { padding: 16px 14px 12px; }
+  .caplink { border: none; padding: 0; font: inherit; color: var(--phos); min-height: 0; min-width: 0; letter-spacing: inherit; }
 
   /* ---- header ---- */
-  .head { padding: 14px 18px 12px; border-left: 4px solid var(--line-strong); }
-  .head.s-active { border-left-color: var(--accent); }
-  .head.s-blocked { border-left-color: var(--fail); }
-  .head.s-done { border-left-color: var(--ok); }
-  .titlerow { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
-
-  .status { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 9px; border-radius: 3px; background: var(--line-strong); color: var(--bg-raised); }
-  .status.s-active { background: var(--accent); }
-  .status.s-blocked { background: var(--fail); }
-  .status.s-done { background: var(--ok); }
-  .slug { font-size: 11px; }
-  h2 { margin: 0 0 10px; font-size: 18px; line-height: 1.3; }
-  .phase { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text); white-space: nowrap; }
-  .segs { display: inline-flex; gap: 2px; }
-  .seg { display: block; width: 14px; height: 4px; border-radius: 1px; background: var(--accent); }
-  .seg.past { opacity: 0.45; }
-  .seg.next { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
-  .word { text-transform: lowercase; }
-  .facts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .fact { font-size: 11px; color: var(--text-dim); background: var(--bg-inset); border-radius: 3px; padding: 2px 8px; text-decoration: none; border: none; cursor: default; min-height: 0; line-height: 1.6; }
-  .fact b { color: var(--text); font-weight: 500; }
-  .fact.link { color: var(--accent); cursor: pointer; }
-  .fact.fail { color: var(--fail); }
-  .strip { border-top: 1px solid var(--line); padding-top: 6px; }
+  .head.s-blocked { border-color: var(--blood-dim); }
+  .head.s-blocked > .cap { color: var(--blood); }
+  .head .goth { font-size: 28px; }
+  .title { color: var(--bone-dim); font-size: 12px; letter-spacing: 0.02em; margin: 2px 0 10px; text-wrap: pretty; }
+  .gates { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .gate { border: 1px solid var(--rust); padding: 3px 8px; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bone-dim); }
+  .gate.hit { border-color: var(--phos-dim); color: var(--phos); }
+  .gate.hit::before { content: '✠ '; }
+  .gate.end.s-done { border-color: var(--verdigris); color: var(--verdigris); }
+  .gate.end.s-dropped { border-color: var(--bone-dim); color: var(--bone-dim); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; align-items: baseline; }
+  .kv .k { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bone-dim); }
+  .kv b { color: var(--bone); font-weight: 500; }
+  .st { text-transform: uppercase; letter-spacing: 0.1em; font-size: 11px; }
+  .st.s-active { color: var(--phos); }
+  .st.s-blocked { color: var(--blood); }
+  .st.s-done { color: var(--verdigris); }
+  .st.s-queued, .st.s-dropped { color: var(--bone-dim); }
+  .facts { display: flex; gap: 4px 12px; flex-wrap: wrap; }
+  .fact { color: var(--bone); white-space: nowrap; }
+  .fact i { font-style: normal; color: var(--bone-dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-right: 2px; }
+  .strip { border-top: 1px solid var(--rust); margin-top: 10px; padding-top: 6px; }
 
   /* ---- shared instrument chrome ---- */
-  .inst { position: relative; padding: 12px 16px 12px; }
-  .inst h3 { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 14px; font-weight: 600; }
-  .src { font-size: 10px; color: var(--text-dim); margin: 1px 0 10px; }
-  .chip { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--text-dim); line-height: 1.7; font-weight: 500; white-space: nowrap; }
-  .chip.warn { border-color: var(--warn); color: var(--warn); }
-  .chip.fail { border-color: var(--fail); color: var(--fail); }
-  .label { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 3px; }
-  .field { margin-bottom: 12px; font-size: 12px; }
+  .src { font-size: 10px; color: var(--bone-dim); margin: -4px 0 10px; letter-spacing: 0.06em; }
+  .field { margin-bottom: 12px; }
+  .field .label { display: block; margin-bottom: 3px; }
+  .label.in { color: var(--phos); }
+  .label.warn { color: var(--phos-dim); }
   .body { white-space: pre-wrap; line-height: 1.5; }
   .body.clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .more { border: none; background: none; padding: 0; color: var(--accent); font-size: 11px; cursor: pointer; min-height: 0; min-width: 0; margin-left: 4px; }
-  .sig { display: inline-flex; gap: 6px; align-items: center; font-size: 10px; color: var(--text-dim); }
-  .actor { font-size: 10px; text-transform: uppercase; border: 1px solid var(--line-strong); padding: 0 5px; border-radius: 3px; color: var(--text-dim); }
-  .actor.human { border-color: var(--accent); color: var(--accent); }
+  .more { border: none; background: none; padding: 0; color: var(--phos); font-size: 10px; cursor: pointer; min-height: 0; min-width: 0; margin-left: 4px; }
+  .sig { display: inline-flex; gap: 6px; align-items: center; font-size: 10px; color: var(--bone-dim); }
+  .actor { font-size: 10px; letter-spacing: 0.06em; color: var(--bone-dim); white-space: nowrap; }
+  .actor.human { color: var(--phos); }
+  .glyphs { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .glyphs li { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: baseline; }
+  .glyphs .g { color: var(--phos-dim); text-align: center; }
+  .glyphs.out li { color: var(--bone-dim); }
+  .inst.empty { border-style: dashed; }
+  .inst.empty .src { margin: 0; }
 
-  /* ---- contract: form with a stamp ---- */
-  .contract { border-left: 4px solid var(--accent); }
-  .contract.draft { border-left-style: dashed; }
-  .stamp { position: absolute; top: 12px; right: 14px; display: inline-flex; gap: 8px; align-items: baseline; padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--text-dim); font-size: 10px; line-height: 1.5; background: var(--bg-inset); }
-  .stamp b { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-  .stamp.approved { border-color: var(--ok); color: var(--ok); }
-  .stamp.approved b::before { content: '✓ '; }
-  .contract h3 { padding-right: 150px; }
-  .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-  .scope .col { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; font-size: 12px; }
-  .scope .in { border-color: var(--ok); }
-  .scope .in .label { color: var(--ok); }
-  .scope .out { border-color: var(--line-strong); }
-  .scope ul { margin: 0; padding-left: 16px; }
-  .scope li { margin: 2px 0; }
-  .scope .out li { color: var(--text-dim); }
-  .crithead { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 11px; }
-  .crithead .label { margin: 0; }
-  .meter { display: inline-flex; width: 120px; height: 8px; background: var(--bg-inset); border-radius: 4px; overflow: hidden; }
-  .meter i { display: block; height: 100%; }
-  .meter .pass { background: var(--ok); }
-  .meter .fail { background: var(--fail); }
-  .criteria { list-style: none; margin: 0; padding: 0; }
-  .criteria li { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  /* ---- contract ---- */
+  .contract.draft { border-style: dashed; }
+  .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px; }
+  .scope .label { display: block; margin-bottom: 4px; }
+  .crithead { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; font-size: 11px; flex-wrap: wrap; }
+  .meter { letter-spacing: 0.02em; font-size: 11px; }
+  .meter b { font-weight: 400; }
+  .meter .off { color: var(--bone-dim); opacity: 0.6; }
+  .criteria li { padding: 5px 0; border-bottom: 1px dashed var(--rust); }
   .criteria li:last-child { border-bottom: none; }
-  .box { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-strong); border-radius: 3px; font-size: 11px; line-height: 13px; text-align: center; color: var(--bg-raised); transform: translateY(2px); }
-  .st-pass .box { background: var(--ok); border-color: var(--ok); }
-  .st-fail .box { background: var(--fail); border-color: var(--fail); }
-  .crbody { flex: 1; }
-  .st-pass .crbody { color: var(--text-dim); }
-  .evidence { font-size: 10px; color: var(--ok); white-space: nowrap; }
-  .st-fail .evidence { color: var(--fail); }
-  .amend { border-top: 1px dashed var(--line-strong); padding-top: 8px; font-size: 11px; }
+  .criteria .st-pass .g { color: var(--verdigris); }
+  .criteria .st-fail .g { color: var(--blood); }
+  .st-pass .crbody { color: var(--bone-dim); }
+  .evidence { font-size: 10px; color: var(--verdigris); }
+  .st-fail .evidence { color: var(--blood); }
+  .amend { border-top: 1px dashed var(--rust-2); padding-top: 8px; font-size: 11px; }
   .arow { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
-  .arow .label { margin: 0; color: var(--warn); }
 
-  /* ---- plan: track ---- */
-  .plan { border-left: 4px solid var(--accent-dim); }
-  .track { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; }
-  .track::before { content: ''; position: absolute; left: 14px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
-  .track li { position: relative; display: flex; gap: 12px; align-items: baseline; padding: 5px 0; font-size: 12px; }
-  .node { position: relative; z-index: 1; flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--bg-raised); font-size: 10px; line-height: 18px; text-align: center; color: var(--text-dim); box-sizing: border-box; transform: translateY(4px); }
-  .track li.done .node { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--bg-raised); }
-  .track li.now .node { border-color: var(--accent); color: var(--accent); font-weight: 700; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-  .track li.done .sbody { color: var(--text-dim); }
-  .track li.now .sbody { font-weight: 600; }
-  .sbody { flex: 1; }
-  .smeta { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
-  .track li.now .smeta { color: var(--accent); }
+  /* ---- plan ---- */
+  .track { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .track li { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: baseline; }
+  .track .g { color: var(--phos-dim); text-align: center; }
+  .track li.done .g { color: var(--verdigris); }
+  .track li.done .sbody { color: var(--bone-dim); }
+  .track li.now .g { color: var(--phos); }
+  .track li.now .sbody { color: var(--phos); }
+  .smeta { font-size: 10px; color: var(--bone-dim); white-space: nowrap; }
+  .track li.now .smeta { color: var(--phos); }
 
-  /* reserved space: the card is there before its skill has run */
-  .inst.empty { border-left-style: dashed; opacity: 0.75; }
-  .inst.empty h3 { margin-bottom: 2px; }
-
-  /* ---- decisions: forks ---- */
-  .decisions { border-left: 4px solid var(--warn); }
-  .forks { list-style: none; margin: 0; padding: 0; }
-  .forks li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  /* ---- decisions ---- */
+  .forks li { padding: 6px 0; border-bottom: 1px dashed var(--rust); }
   .forks li:last-child { border-bottom: none; }
-  .fork { flex: none; font-size: 18px; line-height: 1; color: var(--warn); transform: rotate(180deg); }
-  .fbody { flex: 1; min-width: 0; }
-  .choice b { font-weight: 600; }
+  .fbody { min-width: 0; }
+  .choice b { font-weight: 500; color: var(--bone); }
   .choice s { margin-left: 8px; }
-  .why { color: var(--text-dim); font-style: italic; margin-top: 2px; }
-  .sigline { margin-top: 4px; font-size: 10px; color: var(--text-dim); }
-  .sigline.missing { color: var(--warn); }
+  .why { color: var(--bone-dim); margin-top: 2px; }
+  .sigline { margin-top: 4px; font-size: 10px; color: var(--bone-dim); }
+  .sigline.missing { color: var(--phos-dim); }
 
-  /* ---- questions: threads ---- */
-  .questions { border-left: 4px solid var(--line-strong); }
-  .threads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .threads li { display: flex; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; font-size: 12px; }
-  .threads li.open { border: 1px dashed var(--warn); }
-  .qmark { flex: none; width: 20px; height: 20px; border-radius: 50%; text-align: center; line-height: 20px; font-weight: 700; font-size: 12px; background: var(--line-strong); color: var(--bg-raised); }
-  .threads li.open .qmark { background: var(--warn); }
-  .qbody { flex: 1; min-width: 0; }
-  .qmeta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
-  .threads li.open .qmeta { color: var(--warn); }
-  .answer { margin-top: 4px; padding-left: 4px; color: var(--text); }
+  /* ---- questions ---- */
+  .threads li { padding: 6px 0; border-bottom: 1px dashed var(--rust); }
+  .threads li:last-child { border-bottom: none; }
+  .threads .g { font-weight: 600; }
+  .qbody { min-width: 0; }
+  .qmeta { font-size: 10px; color: var(--bone-dim); margin-top: 2px; letter-spacing: 0.06em; }
+  .answer { margin-top: 4px; color: var(--bone); }
 
-  /* ---- feedback: tally then callouts ---- */
-  .feedback { border-left: 4px solid var(--warn); }
+  /* ---- feedback ---- */
   .tally { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-  .tcount { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--bg-inset); color: var(--text-dim); }
-  .tcount b { font-size: 13px; color: var(--text); margin-right: 3px; }
-  .tcount.fail b { color: var(--fail); }
-  .tcount.warn b { color: var(--warn); }
-  .tsplit { font-size: 11px; margin-left: auto; }
-  .callouts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .callouts li { border: 1px solid var(--line); border-left-width: 3px; border-radius: 3px; padding: 8px 10px; font-size: 12px; background: var(--bg-inset); }
-  .callouts li.fail { border-left-color: var(--fail); }
-  .callouts li.warn { border-left-color: var(--warn); }
-  .chead { display: flex; gap: 8px; align-items: center; font-size: 10px; margin-bottom: 4px; }
+  .tcount { font-size: 11px; padding: 1px 8px; border: 1px solid var(--rust); color: var(--bone-dim); }
+  .tcount b { color: var(--bone); margin-right: 3px; }
+  .tcount.fail b { color: var(--blood); }
+  .tcount.warn b { color: var(--phos-dim); }
+  .callouts li { padding: 6px 0; border-bottom: 1px dashed var(--rust); }
+  .callouts li:last-child { border-bottom: none; }
+  .chead { display: flex; gap: 8px; align-items: center; font-size: 10px; margin-bottom: 3px; }
+  .src-inline { letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
   .chead .sig { margin-left: auto; }
 
-  /* ---- corrections: diffs ---- */
-  .corrections { border-left: 4px solid var(--fail); }
-  .diffs { list-style: none; margin: 0; padding: 0; font-size: 12px; }
-  .diffs li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  /* ---- corrections ---- */
+  .diffs { list-style: none; margin: 0; padding: 0; }
+  .diffs li { padding: 6px 0; border-bottom: 1px dashed var(--rust); }
   .diffs li:last-child { border-bottom: none; }
-  .was, .now { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; border-radius: 2px; }
-  .was { background: color-mix(in srgb, var(--fail) 10%, transparent); color: var(--text-dim); }
-  .now { background: color-mix(in srgb, var(--ok) 10%, transparent); }
-  .dmark { flex: none; font-family: monospace; font-weight: 700; width: 12px; }
-  .was .dmark { color: var(--fail); }
-  .now .dmark { color: var(--ok); }
+  .was, .now { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; }
+  .was { background: color-mix(in srgb, var(--blood) 10%, transparent); color: var(--bone-dim); }
+  .now { background: color-mix(in srgb, var(--verdigris) 10%, transparent); }
+  .dmark { flex: none; font-weight: 700; width: 12px; }
+  .was .dmark { color: var(--blood); }
+  .now .dmark { color: var(--verdigris); }
   .was s { flex: 1; }
   .now > span:nth-child(2) { flex: 1; }
   .dwhen { font-size: 10px; white-space: nowrap; }
 
-  .links { border-left: 4px solid var(--line-strong); }
-  .linklist { margin: 0; padding-left: 18px; font-size: 12px; }
-
   /* ---- ledger ---- */
-  .ledger { border-left: 4px solid var(--line-strong); padding: 8px 12px; }
-  .ledger h3.fold { flex-wrap: wrap; row-gap: 6px; }
-  .ledger.open h3.fold { border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px; }
-  .toggle { display: inline-flex; gap: 8px; align-items: center; border: none; background: none; padding: 0; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; min-height: 0; }
-  .tri { color: var(--text-dim); }
+  .fold { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toggle { border: none; padding: 0; color: var(--phos-dim); min-height: 0; font-size: 11px; }
+  .toggle:hover { color: var(--phos); }
   .pills { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
-  .pill { font-size: 10px; padding: 0 8px; border-radius: 999px; min-height: 0; line-height: 1.8; }
+  .pill { font-size: 10px; padding: 0 8px; min-height: 0; line-height: 1.8; }
+  .pill b { font-weight: 400; color: var(--bone); margin-left: 2px; }
+  .ledger.open .fold { border-bottom: 1px solid var(--rust); padding-bottom: 8px; margin-bottom: 4px; }
   .history { list-style: none; padding: 0; margin: 0; }
-  .history li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
-  .history li.daysep { border-bottom: none; padding: 10px 0 2px; color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .history li { display: grid; grid-template-columns: 78px 14px 90px 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px dashed var(--rust); font-size: 11.5px; }
+  .history li.daysep { display: block; border-bottom: none; padding: 10px 0 2px; color: var(--bone-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; }
   .history li.transition { padding: 3px 0; }
-  .hglyph { color: var(--accent); }
-  .kind { min-width: 84px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
-  .line { flex: 1; min-width: 0; }
+  .history .ts { color: var(--phos-dim); font-size: 10px; letter-spacing: 0.04em; white-space: nowrap; }
+  .history li.human .ts { color: var(--phos); }
+  .hglyph { color: var(--phos); text-align: center; }
+  .kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--bone-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line { min-width: 0; overflow-wrap: anywhere; }
   .transition .line { font-size: 11px; }
-  .fedmark { font-size: 10px; color: var(--accent); white-space: nowrap; }
+  .fedmark { font-size: 10px; color: var(--phos); white-space: nowrap; }
 
   @media (max-width: 700px) {
-    .pair, .scope, .callouts { grid-template-columns: 1fr; }
-    .head { padding: 12px 12px 10px; }
-    h2 { font-size: 16px; }
-    .titlerow { flex-wrap: wrap; }
-    .phase { margin-left: 0; flex-basis: 100%; }
-    .inst { padding: 12px 12px; }
-    .stamp { position: static; align-self: flex-start; margin-bottom: 8px; }
-    .contract h3 { padding-right: 0; }
-    .evidence { white-space: normal; flex-basis: 100%; padding-left: 26px; }
-    .criteria li { flex-wrap: wrap; }
+    .pair, .scope { grid-template-columns: 1fr; }
+    .frame { padding: 14px 10px 10px; }
+    .head .goth { font-size: 24px; }
+    .kv { grid-template-columns: 1fr; gap: 2px; }
+    .kv .k { margin-top: 6px; }
+    .fact { white-space: normal; }
     .smeta { white-space: normal; }
     .pills { margin-left: 0; }
+    .history li { grid-template-columns: 78px 14px 1fr; }
+    .history .kind { display: none; }
+    .history .actor { grid-column: 3; }
   }
   @media (pointer: coarse) {
-    .pill, .more { min-height: 36px; }
+    .pill, .more, .toggle, .back { min-height: 36px; }
   }
 </style>

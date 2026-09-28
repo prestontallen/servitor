@@ -82,9 +82,9 @@ function lsSet(key, v) {
 }
 
 // ---- theme ---------------------------------------------------------------
+// one cogitator language in two modes; the stored choice survives reloads
 export const ui = $state({
-  mode: lsGet('servitor_mode') || 'dark', // light | dark
-  accent: lsGet('servitor_accent') || 'forge' // forge | auspex
+  mode: lsGet('servitor_mode') || 'dark' // light | dark
 });
 
 export function setMode(m) {
@@ -93,10 +93,10 @@ export function setMode(m) {
   document.documentElement.dataset.mode = m;
 }
 
-export function setAccent(a) {
-  ui.accent = a;
-  lsSet('servitor_accent', a);
-  document.documentElement.dataset.accent = a;
+// the prompt line's one-line readout; any view may speak through it
+export const toast = $state({ text: '' });
+export function say(text) {
+  toast.text = text;
 }
 
 // ---- fold state (arcs page bands) ------------------------------------------
@@ -144,11 +144,6 @@ export async function loadBoard() {
 }
 
 // ---- display helpers -------------------------------------------------------
-const WORD_CLASS = { shaping: 'word-shaping', building: 'word-building', checking: 'word-checking', shipping: 'word-shipping' };
-export function wordClass(w) {
-  return WORD_CLASS[w] || '';
-}
-
 const KIND_GLYPH = {
   note: '✎', decision: '⚖', gate: '⚖', feedback: '✦',
   'ticket.create': '✚', 'status.set': '⇄', 'field.set': '≡',

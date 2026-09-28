@@ -1,11 +1,12 @@
 <script>
-  import { arcs, board, fold, setFold, openArc, openTicket, loadArcs, wordClass, relTs, ageOfState, fmtTs } from './state.svelte.js';
+  // Arcs as a tree: each arc is a root with its members hanging off
+  // box-drawing branches; what waits on the human sits in a red frame
+  // above them, oldest wait first (the same rule the board uses).
+  import { arcs, board, fold, setFold, openArc, openTicket, loadArcs, relTs, ageOfState, fmtTs } from './state.svelte.js';
   import { live } from './live.svelte.js';
   import { attention } from './inbox.js';
 
-  // browse state: which arcs are open, and whose done members are shown.
-  // Not persisted — these are gestures, not preferences.
-  let expanded = $state({});
+  // browse state: whose done members are shown. Gestures, not preferences.
   let doneOpen = $state({});
 
   // refresh on live changes while this view is shown
@@ -15,6 +16,7 @@
   });
 
   const ROLLUP_LABEL = { queued: 'queued', active: 'in motion', blocked: 'blocked', done: 'done' };
+  const GLYPH = { queued: '◇', active: '◆', blocked: '☠', done: '■', dropped: '✕' };
 
   // attention: what needs the human — the same rule the inbox uses
   const attentionRows = $derived(attention(board.cards, live.events));
@@ -29,193 +31,165 @@
 
   function members(a) {
     const open = [], done = [];
-    for (const m of a.members) (m.status === 'done' ? done : open).push(m);
+    for (const m of a.members) (m.status === 'done' || m.status === 'dropped' ? done : open).push(m);
     return { open, done };
-  }
-
-  function rel(ts) {
-    if (!ts) return '—';
-    const d = (Date.now() - new Date(ts)) / 1000;
-    if (d < 90) return 'just now';
-    if (d < 3600) return Math.round(d / 60) + 'm ago';
-    if (d < 86400) return Math.round(d / 3600) + 'h ago';
-    return Math.round(d / 86400) + 'd ago';
   }
 </script>
 
-{#snippet memberRow(m)}
+{#snippet memberRow(m, last)}
   {@const ma = ageOfState(m.status, m.blocked_since, m.updated_at)}
-  <li onclick={() => openTicket(m.ulid)}>
-    <span class="m-status s-{m.status}">{m.status}</span>
-    <span class="m-title">{m.title || m.slug}</span>
-    <span class="muted m-slug">{m.slug}</span>
-    {#if ma}
-      <span class="age" class:stale={ma.stale}>
-        {m.status === 'blocked' ? '⏸' : '·'} {relTs(ma.ts)}
-      </span>
-    {/if}
+  <li class="m s-{m.status}" onclick={() => openTicket(m.ulid)} onkeydown={(k) => k.key === 'Enter' && openTicket(m.ulid)} role="link" tabindex="0">
+    <span class="br">{last ? '└─' : '├─'}</span>
+    <span class="g">{GLYPH[m.status] || '·'}</span>
+    <span class="slug">{m.slug}</span>
+    <span class="ttl">{m.title || ''}</span>
+    {#if ma}<span class="age" class:stale={ma.stale} title={fmtTs(ma.ts)}>{relTs(ma.ts)}</span>{/if}
   </li>
 {/snippet}
 
-{#snippet arcCard(a)}
+{#snippet arcTree(a)}
   {@const ms = members(a)}
-  <article class="panel arc roll-{a.rollup}">
-    <header>
-      <button class="title" onclick={() => openArc(a.ulid)}>{a.title || a.slug}</button>
-      <span class="rollup r-{a.rollup}">{ROLLUP_LABEL[a.rollup]}</span>
-    </header>
-    <div class="meta">
-      <span class="muted">{a.slug}</span>
-      {#if a.card_word}<span class="badge {wordClass(a.card_word)}">{a.card_word}</span>{/if}
-      <span class="muted">{a.members.length} member{a.members.length === 1 ? '' : 's'}</span>
-      <span class="muted" title={a.last_activity ? fmtTs(a.last_activity) : ''}>active {rel(a.last_activity)}</span>
-      <button class="expand" onclick={() => (expanded[a.ulid] = !expanded[a.ulid])}>
-        {expanded[a.ulid] ? 'hide' : 'members'}
-      </button>
+  {@const showDone = !!doneOpen[a.ulid]}
+  {@const rows = showDone ? [...ms.open, ...ms.done] : ms.open}
+  <article class="tree roll-{a.rollup}">
+    <div class="root">
+      <span class="g">{a.rollup === 'active' ? '◆' : GLYPH[a.rollup] || '◇'}</span>
+      <button class="arc" onclick={() => openArc(a.ulid)}>{a.slug}</button>
+      <span class="st r-{a.rollup}">{ROLLUP_LABEL[a.rollup] || a.rollup}</span>
+      <span class="meta">· {ms.done.length}/{a.members.length} done · last {relTs(a.last_activity)}</span>
+      <button class="timeline" onclick={() => openArc(a.ulid)}>timeline ↗</button>
     </div>
-    {#if expanded[a.ulid]}
-      {#if ms.open.length}
-        <ul class="members">
-          {#each ms.open as m (m.ulid)}{@render memberRow(m)}{/each}
-        </ul>
+    <div class="ttl-row"><span class="br">│</span><span class="ttl">{a.title || ''}</span></div>
+    <ul class="members">
+      {#each rows as m, i (m.ulid)}
+        {@render memberRow(m, i === rows.length - 1 && (showDone || !ms.done.length))}
+      {/each}
+      {#if ms.done.length && !showDone}
+        <li class="m fold" onclick={() => (doneOpen[a.ulid] = true)} onkeydown={(k) => k.key === 'Enter' && (doneOpen[a.ulid] = true)} role="button" tabindex="0">
+          <span class="br">└─</span><span class="g">▸</span><span class="slug muted">{ms.done.length} finished</span>
+        </li>
+      {:else if ms.done.length && showDone}
+        <li class="m fold" onclick={() => (doneOpen[a.ulid] = false)} onkeydown={(k) => k.key === 'Enter' && (doneOpen[a.ulid] = false)} role="button" tabindex="0">
+          <span class="br">&nbsp;&nbsp;</span><span class="g">▾</span><span class="slug muted">hide finished</span>
+        </li>
       {/if}
-      {#if ms.done.length}
-        <div class="subfold">
-          <button class="toggle" onclick={() => (doneOpen[a.ulid] = !doneOpen[a.ulid])}>
-            <span class="tri">{doneOpen[a.ulid] ? '▾' : '▸'}</span> done <span class="chip">{ms.done.length}</span>
-          </button>
-        </div>
-        {#if doneOpen[a.ulid]}
-          <ul class="members">
-            {#each ms.done as m (m.ulid)}{@render memberRow(m)}{/each}
-          </ul>
-        {/if}
+      {#if !a.members.length}
+        <li class="m"><span class="br">└─</span><span class="g"></span><span class="slug muted">no members</span></li>
       {/if}
-    {/if}
+    </ul>
   </article>
 {/snippet}
 
 <section class="wrap">
-  <h2>Arcs</h2>
   {#if attentionRows.length}
-    <div class="panel attention" class:open={needsOpen}>
-      <button class="toggle needs" onclick={() => setFold('needs', !needsOpen)}>
-        <span class="tri">{needsOpen ? '▾' : '▸'}</span> needs you <span class="chip warn">{attentionRows.length}</span>
-      </button>
+    <div class="frame alarm attention">
+      <span class="cap">☠ Awaiting the human · {attentionRows.length}</span>
+      <button class="cap right toggle" onclick={() => setFold('needs', !needsOpen)}>{needsOpen ? '▾ fold' : '▸ unfold'}</button>
       {#if needsOpen}
-        <ul>
+        <ul class="needs">
           {#each attentionRows as it (it.ulid)}
-            <li class="sev-{it.sev}" onclick={() => openTicket(it.ulid)}>
+            <li class="sev-{it.sev}" onclick={() => openTicket(it.ulid)} onkeydown={(k) => k.key === 'Enter' && openTicket(it.ulid)} role="link" tabindex="0">
               <span class="why">{it.why}</span>
               <span class="a-title">{it.title}</span>
-              <span class="muted since">{relTs(it.since)}</span>
+              <span class="since">{relTs(it.since)}</span>
             </li>
           {/each}
         </ul>
       {/if}
     </div>
   {/if}
-  {#if arcs.error}
-    <p class="muted">arcs unavailable: {arcs.error}</p>
-  {/if}
-  {#each liveArcs as a (a.ulid)}
-    {@render arcCard(a)}
-  {/each}
-  {#if doneArcs.length}
-    <div class="foldbar">
-      <button class="toggle" onclick={() => setFold('finished', !finishedOpen)}>
-        <span class="tri">{finishedOpen ? '▾' : '▸'}</span> finished <span class="chip">{doneArcs.length}</span>
-      </button>
-    </div>
-    {#if finishedOpen}
-      {#each doneArcs as a (a.ulid)}
-        {@render arcCard(a)}
-      {/each}
+
+  <div class="frame">
+    <span class="cap">Arcs · campaigns of tickets</span>
+    <span class="cap right">{liveArcs.length} in play</span>
+    {#if arcs.error}
+      <p class="muted">arcs unavailable: {arcs.error}</p>
     {/if}
-  {/if}
-  {#if !arcs.list.length}
-    <p class="muted empty">
-      no arcs yet — point a ticket at another with<br />
-      <code>servitor set &lt;ref&gt; parent=&lt;arc-ulid&gt;</code>
-    </p>
-  {/if}
+    {#each liveArcs as a (a.ulid)}
+      {@render arcTree(a)}
+    {/each}
+    {#if doneArcs.length}
+      <button class="foldbar" onclick={() => setFold('finished', !finishedOpen)}>{finishedOpen ? '▾' : '▸'} finished · {doneArcs.length}</button>
+      {#if finishedOpen}
+        {#each doneArcs as a (a.ulid)}
+          {@render arcTree(a)}
+        {/each}
+      {/if}
+    {/if}
+    {#if !arcs.list.length && !arcs.error}
+      <p class="muted empty">
+        no arcs yet — point a ticket at another with<br />
+        <code>servitor set &lt;ref&gt; parent=&lt;arc-ulid&gt;</code>
+      </p>
+    {/if}
+  </div>
 </section>
 
 <style>
-  .wrap { max-width: 760px; margin: 0 auto; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
-  .attention { padding: 10px 14px; margin-bottom: 14px; border-left: 3px solid var(--warn); }
-  .attention .needs { color: var(--warn); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
-  .attention.open .needs { margin-bottom: 6px; }
-  .attention ul { list-style: none; margin: 0; padding: 0; }
-  .attention li {
-    display: flex; gap: 10px; align-items: center; padding: 8px 4px;
-    border-bottom: 1px solid var(--line); cursor: pointer; min-height: 44px;
-    font-size: 12px;
+  .wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .frame { padding: 16px 14px 12px; }
+  .toggle { border: none; padding: 0 6px; min-height: 0; font-size: 10px; letter-spacing: 0.12em; }
+
+  /* ---- the alarm: what waits on the human ---- */
+  .needs { list-style: none; margin: 0; padding: 0; }
+  .needs li {
+    display: flex; gap: 12px; align-items: baseline; padding: 6px 2px;
+    border-bottom: 1px dashed var(--rust); cursor: pointer; font-size: 12px;
   }
-  .attention li:last-child { border-bottom: none; }
-  .attention li:hover { background: var(--bg-inset); }
-  .why { color: var(--warn); }
-  .sev-high .why { color: var(--fail); }
-  .a-title { flex: 1; }
-  .since { font-size: 10px; white-space: nowrap; }
-  @media (max-width: 700px) {
-    .attention li { flex-wrap: wrap; }
-    .why { flex-basis: 100%; }
-    .a-title { flex-basis: calc(100% - 60px); }
-  }
-  /* ---- folds: same triangle + count as the ticket page's ledger ---- */
-  .toggle {
-    display: inline-flex; gap: 8px; align-items: center; border: none; background: none;
-    padding: 0; color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
-  }
-  .tri { color: var(--text-dim); }
-  .chip {
-    display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
-    padding: 0 6px; border-radius: 3px; border: 1px solid var(--line-strong);
-    color: var(--text-dim); line-height: 1.7; font-weight: 500; white-space: nowrap;
-  }
-  .chip.warn { border-color: var(--warn); color: var(--warn); }
-  .foldbar { margin: 4px 0 8px; }
-  .foldbar .toggle { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
-  .subfold { border-top: 1px solid var(--line); margin-top: 4px; }
-  .subfold .toggle { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
-  .arc { padding: 12px 14px; margin-bottom: 12px; border-left: 3px solid var(--line-strong); }
-  .arc.roll-active { border-left-color: var(--accent); }
-  .arc.roll-blocked { border-left-color: var(--fail); }
-  .arc.roll-done { border-left-color: var(--ok); }
-  header { display: flex; align-items: baseline; gap: 10px; }
-  .title {
-    font-size: 14px; font-weight: 600; color: var(--text);
-    border: none; background: none; padding: 0; cursor: pointer;
-    text-align: left; flex: 1;
-  }
-  .title:hover { color: var(--accent); }
-  .rollup {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-    padding: 1px 7px; border-radius: 3px; white-space: nowrap;
-  }
-  .r-active { background: var(--accent); color: var(--bg-raised); }
-  .r-blocked { background: var(--fail); color: var(--bg-raised); }
-  .r-done { background: var(--ok); color: var(--bg-raised); }
-  .r-queued { border: 1px solid var(--line-strong); color: var(--text-dim); }
-  .meta { display: flex; gap: 10px; align-items: center; margin-top: 5px; flex-wrap: wrap; font-size: 11px; }
-  .expand { margin-left: auto; font-size: 11px; padding: 2px 8px; }
-  .members { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--line); }
-  .members li {
-    display: flex; gap: 8px; align-items: baseline; padding: 7px 4px;
-    border-bottom: 1px solid var(--line); cursor: pointer; min-height: 44px;
-    align-items: center;
-  }
-  .members li:hover { background: var(--bg-inset); }
-  .m-status { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; min-width: 58px; color: var(--text-dim); }
-  .s-active { color: var(--accent); }
-  .s-blocked { color: var(--fail); }
-  .s-done { color: var(--ok); }
-  .m-title { flex: 1; }
-  .age { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
-  .age.stale { color: var(--warn); font-weight: 600; }
-  .m-slug { font-size: 10px; }
+  .needs li:last-child { border-bottom: none; }
+  .needs li:hover { background: var(--iron-2); }
+  .why { color: var(--phos-dim); white-space: nowrap; }
+  .sev-high .why { color: var(--blood); }
+  .a-title { flex: 1; min-width: 0; color: var(--bone); }
+  .since { font-size: 10px; white-space: nowrap; color: var(--bone-dim); }
+
+  /* ---- the trees ---- */
+  .tree { font-size: 12px; line-height: 1.6; }
+  .tree + .tree { margin-top: 16px; }
+  .root { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .g { color: var(--phos-dim); width: 14px; text-align: center; flex: none; }
+  .roll-blocked .root .g { color: var(--blood); }
+  .roll-done .root .g { color: var(--verdigris); }
+  .arc { border: none; padding: 0; min-height: 0; min-width: 0; font: inherit; color: var(--phos); font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .arc:hover { text-decoration: underline; }
+  .st { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bone-dim); }
+  .st.r-active { color: var(--phos); }
+  .st.r-blocked { color: var(--blood); }
+  .st.r-done { color: var(--verdigris); }
+  .meta { color: var(--bone-dim); font-size: 11px; }
+  .timeline { margin-left: auto; border: none; padding: 0; min-height: 0; font-size: 10px; color: var(--bone-dim); }
+  .timeline:hover { color: var(--phos); }
+  .ttl-row { display: flex; gap: 8px; }
+  .br { color: var(--rust-2); flex: none; white-space: pre; }
+  .ttl { color: var(--bone-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .members { list-style: none; margin: 0; padding: 0; }
+  .m { display: flex; gap: 8px; align-items: baseline; cursor: pointer; min-width: 0; padding: 1px 0; }
+  .m:hover .slug { text-decoration: underline; }
+  .m .slug { color: var(--bone); flex: none; }
+  .m.s-active .slug, .m.s-active .g { color: var(--phos); }
+  .m.s-active .ttl { color: var(--bone); }
+  .m.s-blocked .slug, .m.s-blocked .g { color: var(--blood); }
+  .m.s-done .slug, .m.s-done .g { color: var(--bone-dim); }
+  .m.s-done .g { color: var(--verdigris); }
+  .m.s-dropped .slug { color: var(--bone-dim); text-decoration: line-through; }
+  .m .ttl { flex: 1; }
+  .age { font-size: 10px; color: var(--bone-dim); white-space: nowrap; flex: none; }
+  .age.stale { color: var(--phos-dim); }
+  .m.fold .g { color: var(--bone-dim); }
+  .foldbar { display: block; margin-top: 14px; border: none; padding: 0; min-height: 0; font-size: 10px; letter-spacing: 0.16em; color: var(--bone-dim); }
+  .foldbar:hover { color: var(--phos); }
+  .foldbar + .tree { margin-top: 12px; }
   .empty { line-height: 1.8; }
-  code { color: var(--accent); }
+  code { color: var(--phos); }
+  @media (max-width: 700px) {
+    .frame { padding: 14px 10px 10px; }
+    .needs li { flex-wrap: wrap; }
+    .why { flex-basis: 100%; }
+    .m .ttl { display: none; }
+    .m .slug { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .timeline { margin-left: 0; }
+  }
+  @media (pointer: coarse) {
+    .m { min-height: 32px; align-items: center; }
+  }
 </style>

@@ -1,4 +1,6 @@
 <script>
+  // Arc timeline: one lane per member from the arc's first event to now,
+  // status periods as bars in the card-word ramp, signals as glyphs.
   import { arcs, view, openTicket, show, kindGlyph } from './state.svelte.js';
   import { get } from './api.svelte.js';
 
@@ -68,101 +70,95 @@
     return ((t - span.min) / (span.max - span.min)) * 100;
   }
 
-  const STATUS_COLOR = { queued: 'var(--text-dim)', active: 'var(--accent)', blocked: 'var(--fail)', done: 'var(--ok)' };
   const SIGNAL_KINDS = ['note', 'decision', 'gate', 'feedback'];
+  const STATUSES = ['queued', 'active', 'blocked', 'done', 'dropped'];
 </script>
 
 <section class="wrap">
-  <div class="head">
-    <button class="back" onclick={() => show('arcs')}>&larr; arcs</button>
-    <h2>{arc ? (arc.title || arc.slug) : 'arc'}</h2>
-  </div>
-  {#if error}<p class="muted">{error}</p>{/if}
-  {#if loading}<p class="muted">loading…</p>{/if}
+  <button class="back" onclick={() => show('arcs')}>← arcs</button>
+  <div class="frame">
+    <span class="cap">Arc timeline</span>
+    <span class="cap right">{#if span}{new Date(span.min).toLocaleDateString()} → now · {Math.max(1, Math.round((span.max - span.min) / DAY))} days{/if}</span>
+    <h2 class="goth">{arc ? arc.slug : 'arc'}</h2>
+    <div class="title">{arc?.title || ''}</div>
+    {#if error}<p class="muted">{error}</p>{/if}
+    {#if loading}<p class="muted">querying…</p>{/if}
 
-  {#if span && lanes.length}
-    <div class="timeline panel">
-      <div class="axis muted">
-        <span>{new Date(span.min).toLocaleDateString()}</span>
-        <span>{Math.max(1, Math.round((span.max - span.min) / DAY))} day{(span.max - span.min) > DAY ? 's' : ''}</span>
-        <span>now</span>
-      </div>
-      {#each lanes as lane (lane.member.ulid)}
-        <div class="lane">
-          <button class="who" onclick={() => openTicket(lane.member.ulid)}>{lane.member.slug}</button>
-          <div class="track">
-            {#each periods(lane.events) as p}
-              <div
-                class="period"
-                style:left="{pct(Math.max(p.start, span.min))}%"
-                style:width="{Math.max(pct(p.end === Infinity ? span.max : Math.min(p.end, span.max)) - pct(Math.max(p.start, span.min)), 0.5)}%"
-                style:background={STATUS_COLOR[p.status] || 'var(--text-dim)'}
-                title="{p.status}"
-              ></div>
-            {/each}
-            {#each lane.events.filter((e) => SIGNAL_KINDS.includes(e.kind)) as e (e.id)}
-              <span
-                class="mark k-{e.kind}"
-                style:left="{pct(new Date(e.ts).getTime())}%"
-                title="{e.kind}: {e.payload?.v || e.payload?.what || e.payload?.finding || ''}"
-              >{kindGlyph(e.kind)}</span>
-            {/each}
+    {#if span && lanes.length}
+      <div class="lanes">
+        {#each lanes as lane, i (lane.member.ulid)}
+          <div class="lane" class:root={i === 0}>
+            <button class="who" onclick={() => openTicket(lane.member.ulid)}>{i === 0 ? '' : '├─ '}{lane.member.slug}</button>
+            <div class="track">
+              {#each periods(lane.events) as p}
+                <div
+                  class="period s-{p.status}"
+                  style:left="{pct(Math.max(p.start, span.min))}%"
+                  style:width="{Math.max(pct(p.end === Infinity ? span.max : Math.min(p.end, span.max)) - pct(Math.max(p.start, span.min)), 0.5)}%"
+                  title="{p.status}"
+                ></div>
+              {/each}
+              {#each lane.events.filter((e) => SIGNAL_KINDS.includes(e.kind)) as e (e.id)}
+                <span
+                  class="mark k-{e.kind}"
+                  style:left="{pct(new Date(e.ts).getTime())}%"
+                  title="{e.kind}: {e.payload?.v || e.payload?.what || e.payload?.finding || e.payload?.gate || ''}"
+                >{e.kind === 'gate' ? '✠' : kindGlyph(e.kind)}</span>
+              {/each}
+            </div>
           </div>
-        </div>
-      {/each}
-      <div class="legend muted">
-        <span><i style="background: var(--text-dim)"></i> queued</span>
-        <span><i style="background: var(--accent)"></i> active</span>
-        <span><i style="background: var(--fail)"></i> blocked</span>
-        <span><i style="background: var(--ok)"></i> done</span>
-        <span>✎ signal (note/decision/gate — hover/tap for detail)</span>
+        {/each}
       </div>
-    </div>
-  {:else if !loading && !error}
-    <p class="muted">no events yet</p>
-  {/if}
+      <div class="legend">
+        {#each STATUSES as s (s)}<span><i class="s-{s}"></i>{s}</span>{/each}
+        <span>✠ gate · ⚖ decision · ✎ note · ✦ feedback — hover for detail</span>
+      </div>
+    {:else if !loading && !error}
+      <p class="muted">no events yet</p>
+    {/if}
+  </div>
 </section>
 
 <style>
   .wrap { max-width: 1100px; margin: 0 auto; }
-  .head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 14px; }
-  h2 { font-size: 15px; margin: 0; }
-  .back { font-size: 11px; padding: 4px 10px; }
-  .timeline { padding: 16px 18px; }
-  .axis {
-    display: flex; justify-content: space-between; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.06em;
-    border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 8px;
-  }
-  .lane { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+  .back { margin-bottom: 14px; border: none; padding: 0; font-size: 11px; color: var(--phos-dim); min-height: 0; }
+  .back:hover { color: var(--phos); }
+  .frame { padding: 16px 14px 12px; }
+  .title { color: var(--bone-dim); font-size: 12px; margin: 2px 0 14px; }
+  .lanes { display: grid; gap: 4px; }
+  .lane { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; }
+  .lane.root .who { color: var(--phos); font-weight: 500; }
   .who {
-    min-width: 110px; max-width: 110px; text-align: left; font-size: 11px;
-    border: none; background: none; color: var(--accent); padding: 0;
-    cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    min-height: 32px;
+    text-align: left; font-size: 11px; border: none; background: none; color: var(--phos-dim); padding: 0;
+    cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 24px;
+    text-transform: none; letter-spacing: 0;
   }
+  .who:hover { color: var(--phos); }
   .track {
-    position: relative; flex: 1; height: 26px;
-    background: var(--bg-inset); border-radius: 3px; overflow: visible;
+    position: relative; height: 22px; min-width: 0;
+    background: repeating-linear-gradient(90deg, var(--rust) 0 1px, transparent 1px 8px);
   }
-  .period {
-    position: absolute; top: 7px; height: 12px; border-radius: 2px; opacity: 0.75;
-  }
+  .period { position: absolute; top: 7px; height: 8px; }
+  .s-queued { background: var(--w-queued); }
+  .s-active { background: var(--phos); }
+  .s-blocked { background: var(--hatch); }
+  .s-done { background: var(--verdigris); }
+  .s-dropped { background: var(--bone-dim); }
   .mark {
     position: absolute; top: 50%; transform: translate(-50%, -50%);
-    font-size: 11px; line-height: 1; color: var(--text);
-    background: var(--bg-raised); border: 1px solid var(--line-strong);
-    border-radius: 50%; width: 18px; height: 18px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: default;
+    font-size: 10px; line-height: 1; color: var(--bone); background: var(--iron);
+    border: 1px solid var(--rust-2); width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center; cursor: default;
   }
-  .mark.k-gate { border-color: var(--accent); color: var(--accent); }
-  .mark.k-decision { border-color: var(--warn); color: var(--warn); }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 10px; align-items: center; }
-  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  .mark.k-gate { border-color: var(--phos); color: var(--phos); }
+  .mark.k-decision { border-color: var(--phos-dim); color: var(--phos-dim); }
+  .mark.k-feedback { border-color: var(--blood); color: var(--blood); }
+  .legend { display: flex; gap: 6px 16px; flex-wrap: wrap; margin-top: 14px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
+  .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: middle; }
   @media (max-width: 700px) {
-    .lane { flex-direction: column; align-items: stretch; gap: 4px; }
-    .who { max-width: none; min-height: 24px; }
-    .mark { width: 22px; height: 22px; font-size: 13px; }
+    .frame { padding: 14px 10px 10px; }
+    .lane { grid-template-columns: 90px 1fr; }
+    .who { font-size: 10px; }
+    .mark { width: 20px; height: 20px; font-size: 12px; }
   }
 </style>

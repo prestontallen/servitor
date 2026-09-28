@@ -149,7 +149,7 @@
       {#each segments as s, i}
         <span class="link" title="{s.from} → {s.to}">
           {#if s.word}{s.word}{:else}{s.from} → {s.to}{/if}
-          <b>{fmtDur(s.end - s.start)}{#if !terminal && i === segments.length - 1} so far{/if}</b>
+          <b>{fmtDur(s.end - s.start)}{#if !terminal && i === segments.length - 1}{' so far'}{/if}</b>
         </span>
       {/each}
       {#if nextGate}<span class="link next">next gate <b>{nextGate}</b></span>{/if}
