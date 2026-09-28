@@ -6,7 +6,6 @@
   import Time from './lib/Time.svelte';
   import Ticket from './lib/Ticket.svelte';
   import Journal from './lib/Journal.svelte';
-  import Analytics from './lib/Analytics.svelte';
   import { view, ui, loadBoard, loadArcs, routeFromLocation, onRouteChange } from './lib/state.svelte.js';
   import { connectStream } from './lib/live.svelte.js';
   import { onMount } from 'svelte';
@@ -31,7 +30,6 @@
     {#if view.name === 'time'}<Time />{/if}
     {#if view.name === 'journal'}<Journal />{/if}
     {#if view.name === 'ticket'}<Ticket />{/if}
-    {#if view.name === 'analytics'}<Analytics />{/if}
   </main>
 </div>
 
