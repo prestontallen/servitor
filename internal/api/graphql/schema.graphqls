@@ -1,0 +1,202 @@
+"""
+RFC3339 timestamp with nanoseconds, the same format the REST JSON carries.
+"""
+scalar Time
+
+"""
+Arbitrary JSON, served as-is: an event payload, a ticket aggregate, an
+hourly actor count.
+"""
+scalar JSON
+
+"""
+Read-only queries over the servitor ledger and its read model. Writes stay
+on POST /api/events. Field names are snake_case, matching the REST JSON, so
+a client can fold either surface with the same code.
+"""
+type Query {
+  "Queued, active and blocked tickets in rank order; arcs are excluded, as on the REST board."
+  board: [Ticket!]!
+
+  "Tickets in any status. status filters to those statuses (invalid ones are an invalid_status error); query matches slug or title case-insensitively; limit <= 0 means unlimited."
+  tickets(status: [String!], query: String, limit: Int): [Ticket!]!
+
+  "Arcs: tickets that at least one other ticket names as parent, with their derived rollup."
+  arcs: [Arc!]!
+
+  "One ticket by ULID or slug. An unknown ref is an unknown_ticket error."
+  ticket(ref: String!): Ticket!
+
+  """
+  The global ledger, newest first. since/until bound ts as [since, until).
+  tickets (ULIDs or slugs) and arc (the arc ticket and its non-dropped
+  members) restrict which tickets' events return; with both set, both
+  apply. before_id pages older. limit defaults to 200 and may not exceed
+  10000.
+  """
+  events(
+    since: Time
+    until: Time
+    tickets: [String!]
+    arc: String
+    kind: String
+    actor_type: String
+    before_id: Int
+    limit: Int = 200
+  ): EventPage!
+
+  "Phase segments per ticket and hourly actor buckets for a window. days is the shorthand (default 30, max 365); since and until override it."
+  timeline(since: Time, until: Time, days: Int): Timeline!
+}
+
+"""
+A ticket as the board shows it, with its links and its ledger reachable.
+"""
+type Ticket {
+  "The ticket's identity."
+  ulid: String!
+  "The live slug: a mutable alias."
+  slug: String!
+  "One-line title."
+  title: String!
+  "queued | active | blocked | done | dropped."
+  status: String!
+  "Board order; lower is higher."
+  rank: Int!
+  "Derived from the latest gate: shaping | building | checking | shipping; null before any gate."
+  card_word: String
+  "Who a blocked ticket waits on."
+  blocked_on: String
+  "When the ticket became blocked."
+  blocked_since: Time
+  "Time of the ticket's latest event."
+  updated_at: Time
+  "The arc ULID this ticket belongs to, if any."
+  parent: String
+  "Actor of the latest status.set active while the ticket is active: who holds the card."
+  active_by: String
+  "When that actor set the ticket active."
+  active_since: Time
+  "Criteria in state pass."
+  criteria_pass: Int!
+  "Criteria written."
+  criteria_total: Int!
+
+  "The arc ticket this ticket belongs to, if any."
+  parent_ticket: Ticket
+  "Tickets that name this one as parent, any status, in rank order."
+  children: [Ticket!]!
+
+  """
+  This ticket's ledger, newest first: since/until bound ts as [since,
+  until), kind filters, limit (default 100) keeps the newest per ticket.
+  Asked under many tickets, all of them are read in one ledger query; the
+  tickets times limit may not exceed 10000.
+  """
+  events(since: Time, until: Time, kind: String, limit: Int = 100): [Event!]!
+
+  "The whole ticket aggregate the REST /api/ticket/{ref} route serves (contract, criteria, plan, notes, gates, fields), as one JSON value."
+  aggregate: JSON!
+}
+
+"""
+One ledger event: the unit of every write.
+"""
+type Event {
+  "Ledger sequence number; the keyset for paging."
+  id: Int!
+  "Event identity."
+  ulid: String!
+  "The ticket the event belongs to."
+  ticket_ulid: String!
+  "When it was appended."
+  ts: Time!
+  "human:<name> | agent:<name> | system."
+  actor: String!
+  "human | agent | system."
+  actor_type: String!
+  "Session tag the writer supplied, if any."
+  session: String
+  "Event kind: note, decision, gate, status.set, field.set, subitem.add, ..."
+  kind: String!
+  "signal | transition, derived from kind."
+  class: String!
+  "The event body; its shape depends on kind."
+  payload: JSON!
+  "The ticket the event belongs to."
+  ticket: Ticket!
+}
+
+"""
+A page of the ledger, newest first.
+"""
+type EventPage {
+  "The events, newest first."
+  events: [Event!]!
+  "Pass as before_id to read the next older page. Set whenever the page is full (its length equals limit), so it can point at an empty page; null when the page is short."
+  next_before_id: Int
+}
+
+"""
+An arc: a ticket that member tickets point at, with a rollup derived from them.
+"""
+type Arc {
+  "The arc ticket's ULID."
+  ulid: String!
+  "The arc ticket's slug."
+  slug: String!
+  "The arc ticket's title."
+  title: String!
+  "The arc ticket's own status."
+  status: String!
+  "The arc ticket's own card word."
+  card_word: String
+  "queued | active | blocked | done, derived from the non-dropped members."
+  rollup: String!
+  "Newest member update."
+  last_activity: Time
+  "The arc as a ticket, for its own events and aggregate."
+  ticket: Ticket!
+  "Non-dropped members."
+  members: [Ticket!]!
+}
+
+"""
+The /api/timeline read: phase segments and hourly activity for a window.
+"""
+type Timeline {
+  "Window start."
+  since: Time!
+  "Window end."
+  until: Time!
+  "Continuous stretches of one ticket in one phase, clipped to the window."
+  segments: [Segment!]!
+  "Ledger activity per hour, split by actor_type."
+  buckets: [HourBucket!]!
+}
+
+"""
+One ticket in one phase from one time to another.
+"""
+type Segment {
+  "The ticket."
+  ticket_ulid: String!
+  "Its slug."
+  slug: String!
+  "queued | shaping | building | checking | shipping | blocked."
+  phase: String!
+  "Segment start."
+  from: Time!
+  "Segment end."
+  to: Time!
+}
+
+"""
+One hour of ledger activity.
+"""
+type HourBucket {
+  "The hour."
+  hour: Time!
+  "Event counts keyed by actor_type."
+  by_actor: JSON!
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 15,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J000000000000000000BETA1",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "feedback",
+    "class": "",
+    "payload": {
+      "finding": "one line",
+      "source": "human"
+    }
+  }
+]
+

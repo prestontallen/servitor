@@ -1,0 +1,138 @@
+[
+  {
+    "id": 2,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "ticket.create",
+    "class": "transition",
+    "payload": {
+      "slug": "fx-alpha",
+      "title": "Alpha"
+    }
+  },
+  {
+    "id": 5,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "field.set",
+    "class": "transition",
+    "payload": {
+      "field": "parent",
+      "v": "01J0000000000000000000ARC1"
+    }
+  },
+  {
+    "id": 7,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "status.set",
+    "class": "transition",
+    "payload": {
+      "status": "active"
+    }
+  },
+  {
+    "id": 8,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "human:preston",
+    "actor_type": "human",
+    "session": "",
+    "kind": "gate",
+    "class": "signal",
+    "payload": {
+      "gate": "contract_approved"
+    }
+  },
+  {
+    "id": 9,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "subitem.add",
+    "class": "transition",
+    "payload": {
+      "body": "when x then y",
+      "kind": "criterion",
+      "rank": 0,
+      "ulid": "01J00000000000000000CR1T01"
+    }
+  },
+  {
+    "id": 10,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "subitem.set",
+    "class": "transition",
+    "payload": {
+      "evidence": "a test",
+      "state": "pass",
+      "ulid": "01J00000000000000000CR1T01"
+    }
+  },
+  {
+    "id": 11,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "note",
+    "class": "signal",
+    "payload": {
+      "v": "a note"
+    }
+  },
+  {
+    "id": 12,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "decision",
+    "class": "signal",
+    "payload": {
+      "what": "pick a",
+      "why": "because"
+    }
+  },
+  {
+    "id": 13,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "field.set",
+    "class": "transition",
+    "payload": {
+      "field": "branch",
+      "v": "agent/test/fx-alpha"
+    }
+  }
+]
+

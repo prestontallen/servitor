@@ -1,0 +1,17 @@
+[
+  {
+    "id": 8,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "human:preston",
+    "actor_type": "human",
+    "session": "",
+    "kind": "gate",
+    "class": "signal",
+    "payload": {
+      "gate": "contract_approved"
+    }
+  }
+]
+

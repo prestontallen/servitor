@@ -1,0 +1,19 @@
+[
+  {
+    "ulid": "01J000000000000000000D0NE1",
+    "slug": "fx-done",
+    "title": "Done one",
+    "status": "done",
+    "rank": 0,
+    "card_word": null,
+    "blocked_on": null,
+    "blocked_since": null,
+    "updated_at": "<ts>",
+    "parent": null,
+    "active_by": null,
+    "active_since": null,
+    "criteria_pass": 0,
+    "criteria_total": 0
+  }
+]
+

@@ -1,0 +1,49 @@
+# gqlgen config for the read-only GraphQL endpoint (internal/api/graphql).
+# Regenerate with: go tool gqlgen generate (pinned by the tool directive in go.mod)
+schema:
+  - internal/api/graphql/schema.graphqls
+exec:
+  filename: internal/api/graphql/generated.go
+  package: graphql
+model:
+  filename: internal/api/graphql/models_gen.go
+  package: graphql
+resolver:
+  layout: follow-schema
+  dir: internal/api/graphql
+  package: graphql
+  filename_template: "{name}.resolvers.go"
+struct_tag: json
+omit_getters: true
+models:
+  JSON:
+    model:
+      - github.com/prestontallen/servitor/internal/api/graphql.RawJSON
+      - github.com/99designs/gqlgen/graphql.Map
+  Ticket:
+    model: github.com/prestontallen/servitor/internal/store.Card
+    fields:
+      parent_ticket: { resolver: true }
+      children: { resolver: true }
+      events: { resolver: true }
+      aggregate: { resolver: true }
+  Event:
+    model: github.com/prestontallen/servitor/internal/store.LedgerEvent
+    fields:
+      ticket_ulid: { fieldName: Ticket }
+      ticket: { resolver: true }
+  Arc:
+    model: github.com/prestontallen/servitor/internal/store.ArcSummary
+    fields:
+      ticket: { resolver: true }
+      members: { resolver: true }
+  Timeline:
+    model: github.com/prestontallen/servitor/internal/api.Timeline
+  Segment:
+    model: github.com/prestontallen/servitor/internal/api.Segment
+    fields:
+      ticket_ulid: { fieldName: Ticket }
+  HourBucket:
+    model: github.com/prestontallen/servitor/internal/api.HourBucket
+    fields:
+      by_actor: { resolver: true }

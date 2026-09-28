@@ -21,6 +21,9 @@ jobs:
       - run: npm ci && npm run build
         working-directory: web
       - run: go build ./...
+      # the GraphQL code is generated from schema.graphqls; a stale commit
+      # of either side fails here
+      - run: go tool gqlgen generate && git diff --exit-code -- internal/api/graphql go.mod go.sum
       - run: go vet ./...
       - run: go test ./...
       # install.sh is shell and no go test reaches it; these stub the network,

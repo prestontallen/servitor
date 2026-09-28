@@ -1,0 +1,53 @@
+{
+  "pr": null,
+  "head": 13,
+  "plan": [],
+  "rank": 0,
+  "slug": "fx-alpha",
+  "ulid": "01J00000000000000000A1FA01",
+  "gates": [
+    {
+      "ts": "<ts>",
+      "gate": "contract_approved",
+      "actor": "human:preston"
+    }
+  ],
+  "links": [],
+  "notes": [
+    {
+      "ts": "<ts>",
+      "body": "a note"
+    }
+  ],
+  "title": "Alpha",
+  "fields": {
+    "branch": "agent/test/fx-alpha"
+  },
+  "parent": "01J0000000000000000000ARC1",
+  "review": null,
+  "status": "active",
+  "contract": null,
+  "criteria": [
+    {
+      "body": "when x then y",
+      "ulid": "01J00000000000000000CR1T01",
+      "state": "pass",
+      "evidence": "a test"
+    }
+  ],
+  "feedback": [],
+  "active_by": "agent:test",
+  "card_word": "building",
+  "decisions": [
+    {
+      "why": "because",
+      "ulid": "<ulid>",
+      "what": "pick a"
+    }
+  ],
+  "questions": [],
+  "blocked_on": null,
+  "updated_at": "<ts>",
+  "active_since": "<ts>",
+  "blocked_since": null
+}
