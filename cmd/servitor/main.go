@@ -181,9 +181,10 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		return encode(stdout, arcs)
 
 	case "add":
-		// servitor add <ref> <criterion|plan|question> <text...>
+		// servitor add <ref> <criterion|plan|question|finding> <text...>
+		// prints the new subitem's ULID: the handle subitem addresses
 		if len(args) < 3 {
-			say("add: need <ref> <criterion|plan|question> <text>")
+			say("add: need <ref> <criterion|plan|question|finding> <text>")
 			return 2
 		}
 		res, err := c.Append(ctx, api.WriteCmd{
@@ -196,7 +197,7 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			say("%v", err)
 			return 1
 		}
-		fmt.Fprintln(stdout, res.EventID)
+		fmt.Fprintln(stdout, res.SubitemULID)
 		return 0
 
 	case "decide":
@@ -574,8 +575,8 @@ func usage(w io.Writer) {
   new --slug S [--title T] [--rank N]
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
   log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)
-  add <ref> <criterion|plan|question> <text>
-                                   append a subitem (subitem.add)
+  add <ref> <criterion|plan|question|finding> <text>
+                                   append a subitem (subitem.add); prints its ULID
   decide <ref> <what> --why <why>  record a decision subitem
   subitem <ref> <prefix> [--body B] [--state S] [--rank N]
                                    update/reorder a subitem by ULID prefix

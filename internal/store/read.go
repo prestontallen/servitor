@@ -323,6 +323,8 @@ SELECT jsonb_build_object(
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='link'), '[]'::jsonb),
   'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body))
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='question'), '[]'::jsonb),
+  'findings', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank, s.created_at, s.ulid)
+                         FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='finding'), '[]'::jsonb),
   'feedback', COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'finding',l.payload->>'finding',
                              'source',COALESCE(l.payload->>'source','self'),'actor',l.actor,'ts',l.ts) ORDER BY l.id DESC)
                         FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='feedback'), '[]'::jsonb),

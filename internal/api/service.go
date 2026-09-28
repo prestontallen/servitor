@@ -60,16 +60,19 @@ type WriteCmd struct {
 	Ticket        string         `json:"ticket"` // ULID or slug
 	Kind          string         `json:"kind"`
 	Payload       map[string]any `json:"payload"`
-	Actor         string         `json:"actor"`       // "human:preston" | "agent:<id>" | "system"
+	Actor         string         `json:"actor"` // "human:preston" | "agent:<id>" | "system"
 	Session       string         `json:"session"`
 	ExpectUpdated *time.Time     `json:"expect_updated"`
 }
 
 // AppendResult reports the committed event.
 type AppendResult struct {
-	EventID   int64  `json:"event_id"`
-	TicketULID string `json:"ticket_ulid"`
-	Updated   time.Time `json:"updated"`
+	EventID    int64     `json:"event_id"`
+	TicketULID string    `json:"ticket_ulid"`
+	Updated    time.Time `json:"updated"`
+	// SubitemULID names the subitem a subitem.add created, so the caller
+	// can address it (subitem.set) without reading it back.
+	SubitemULID string `json:"subitem_ulid,omitempty"`
 }
 
 // Change is one change-detection notification (SSE payload).
