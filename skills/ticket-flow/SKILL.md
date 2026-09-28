@@ -39,37 +39,26 @@ on different machines can see.
 
 ### Branch name
 
-The default branch name is `agent/<agentname>/<ticket-slug>`. A local
-preference can override it: the branch name is resolved in this order
-and the first hit wins.
+The default branch name is `agent/<agentname>/<ticket-slug>`. If the
+agent has a personal branch-naming preference — recorded in its memory,
+user profile, or standing instructions — that takes precedence over this
+skill's default. Otherwise use the default.
 
-1. `SERVITOR_BRANCH_TEMPLATE` env var (this session only)
-2. `git config servitor.branchTemplate` in the repo (`.git/config`)
-3. `git config --global servitor.branchTemplate` (`~/.gitconfig`)
-4. default `agent/<agentname>/<ticket-slug>`
-
-A template is a plain string with `<agentname>` and `<ticket-slug>`
-placeholders, e.g. `agent/<agentname>/<ticket-slug>` or
-`p/<ticket-slug>`. Resolve it literally — no shell expansion. Two
-rules keep the flow intact whatever the template:
+A preference is a plain string with `<agentname>` and `<ticket-slug>`
+placeholders, e.g. `p/<ticket-slug>`. Resolve it literally — no shell
+expansion. Two rules keep the flow intact whatever the name:
 
 - the ticket slug must appear in the name (one branch per ticket is the
   invariant; the agent prefix is style), and
 - if the name collides with an existing branch, that ticket already has
   a branch: reuse it instead of creating a new one.
 
-Machine-level preference (e.g. Preston's own checkouts) belongs in
-`git config --global`; a repo-specific quirk goes repo-local; a one-off
-session override uses the env var.
-
 ```bash
 export SERVITOR_ACTOR=agent:<agentname>
 servitor set <ref> --status active
 git fetch origin
-BRANCH="${SERVITOR_BRANCH_TEMPLATE:-$(git config servitor.branchTemplate || git config --global servitor.branchTemplate)}"
-BRANCH="${BRANCH:-agent/<agentname>/<ticket-slug>}"   # default
-# resolve <agentname> and <ticket-slug> in $BRANCH before use, e.g.
-BRANCH="${BRANCH//<agentname>/cli}"; BRANCH="${BRANCH//<ticket-slug>/my-ticket-slug}"
+# BRANCH = personal preference from memory/instructions if set,
+#          else the default agent/<agentname>/<ticket-slug>
 git worktree add -b "$BRANCH" ../servitor-worktrees/<ticket-slug> origin/main
 servitor set <ref> branch="$BRANCH" worktree=../servitor-worktrees/<ticket-slug> pushed=false next="contract"
 cd ../servitor-worktrees/<ticket-slug>
