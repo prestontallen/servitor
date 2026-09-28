@@ -62,8 +62,7 @@ switch views; the prompt line at the foot takes `board`, `time`, `arcs`,
 
 ## Usage
 
-Agents interact only via the CLI or MCP — never the database, never the
-files.
+Agents interact only via the CLI or MCP
 
 ```
 servitor hook [ref]       SessionStart hook: preflight header + ctx; always exits 0
