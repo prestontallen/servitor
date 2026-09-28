@@ -203,24 +203,32 @@ func (c *HTTPClient) Subscribe(ctx context.Context) (Subscription, error) {
 		defer close(ch)
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(make([]byte, 64*1024), 1024*1024)
-		var data string
+		// event name + data per SSE block; only `change` blocks (the
+		// default, unnamed kind counts as one) become Changes. hello and
+		// ping are liveness bytes for the transport, not changes.
+		var data, name string
 		for sc.Scan() {
 			line := strings.TrimSpace(sc.Text())
 			switch {
+			case strings.HasPrefix(line, "event: "):
+				name = strings.TrimPrefix(line, "event: ")
 			case strings.HasPrefix(line, "data: "):
 				data = strings.TrimPrefix(line, "data: ")
-			case line == "" && data != "":
-				var chg Change
-				if json.Unmarshal([]byte(data), &chg) == nil {
-					select {
-					case ch <- chg:
-					case <-ctx.Done():
-						return
+			case line == "":
+				if name == "resync" {
+					return
+				}
+				if data != "" && (name == "" || name == "change") {
+					var chg Change
+					if json.Unmarshal([]byte(data), &chg) == nil {
+						select {
+						case ch <- chg:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
-				data = ""
-			case line == "event: resync":
-				return
+				data, name = "", ""
 			}
 		}
 	}()

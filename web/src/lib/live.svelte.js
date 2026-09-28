@@ -6,7 +6,7 @@
 import { get, streamURL } from './api.svelte.js';
 
 export const live = $state({
-  status: 'connecting', // connecting | live | down
+  status: 'connecting', // connecting (until the first bytes) | live | down
   head: 0, // watermark: max global ledger event id seen
   events: [], // ledger events, newest first, deduped by id
   flashes: {}, // event id -> true while the live flash plays
@@ -15,32 +15,57 @@ export const live = $state({
 
 let es = null;
 let backoff = 1000;
+let lastHeard = 0; // last bytes from the daemon, or the start of the current dial
+let watchdog = null;
+
+// The daemon writes a hello event on connect and a ping every 15s while
+// idle; SILENCE is how long the stream may go quiet before it is
+// declared dead and redialed. Three missed pings, so a laggy proxy does
+// not flap the mast.
+const SILENCE = 45000;
 
 export function connectStream() {
   if (es) es.close();
   es = new EventSource(streamURL());
-  // open fires when the HTTP stream is established, regardless of whether
-  // any change events flow — this, not the change handler, is the
-  // "connected" signal.
-  es.onopen = () => {
+  lastHeard = Date.now();
+  const heard = () => {
+    lastHeard = Date.now();
     live.status = 'live';
     backoff = 1000;
   };
+  // open fires when the HTTP stream is established; hello is the first
+  // bytes the daemon writes on it. Either is the "connected" signal:
+  // some paths (proxies, browsers) never fire open on a bodiless
+  // response, which is why the daemon sends hello at all.
+  es.onopen = heard;
+  es.addEventListener('hello', heard);
+  es.addEventListener('ping', heard);
   es.addEventListener('change', (e) => {
-    live.status = 'live';
+    heard();
     const c = JSON.parse(e.data);
     if ((c.event_id || 0) > live.head) live.head = c.event_id;
     ingest(c.ticket);
   });
-  es.onerror = () => {
-    // Don't trust native EventSource reconnection after a servitord
-    // restart (it has stalled on "signal lost" here). Close and dial
-    // again ourselves, capped exponential backoff, reset on onopen.
-    live.status = 'down';
-    es.close();
-    setTimeout(connectStream, backoff);
-    backoff = Math.min(backoff * 2, 30000);
-  };
+  es.onerror = redial;
+  if (!watchdog) {
+    watchdog = setInterval(() => {
+      // a stream that went silent past SILENCE is dead even though
+      // EventSource has not noticed; a dial that never got hello within
+      // SILENCE is stuck the same way. Both redial.
+      if (es && Date.now() - lastHeard > SILENCE) redial();
+    }, 5000);
+  }
+}
+
+// Don't trust native EventSource reconnection after a servitord restart
+// (it has stalled on "signal lost" here). Close and dial again ourselves,
+// capped exponential backoff, reset on the next bytes heard.
+function redial() {
+  live.status = 'down';
+  if (es) es.close();
+  es = null;
+  setTimeout(connectStream, backoff);
+  backoff = Math.min(backoff * 2, 30000);
 }
 
 // Pull a ticket's recent history and merge unseen events into the stream.

@@ -170,6 +170,101 @@ func TestSSEStreamDeliversChange(t *testing.T) {
 	}
 }
 
+// The first bytes on the stream are a hello event carrying the current
+// watermark, before any change and regardless of ledger activity.
+func TestStreamHello(t *testing.T) {
+	s := svc(t)
+	mustCreate(t, s, "sse-hello")
+	srv := httptest.NewServer(NewHTTP(s).Routes())
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/events/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("X-Accel-Buffering"); got != "no" {
+		t.Errorf("X-Accel-Buffering = %q, want no", got)
+	}
+	buf := make([]byte, 1024)
+	n, _ := resp.Body.Read(buf)
+	out := string(buf[:n])
+	if !strings.HasPrefix(out, "event: hello\ndata: {\"event_id\":") {
+		t.Fatalf("first bytes not hello: %q", out)
+	}
+	var hello struct {
+		EventID int64 `json:"event_id"`
+	}
+	data := strings.TrimSuffix(strings.TrimPrefix(out, "event: hello\ndata: "), "\n\n")
+	if err := json.Unmarshal([]byte(data), &hello); err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := s.Events(ctx, store.LedgerFilter{Limit: 1})
+	if len(evs) == 0 || hello.EventID != evs[0].ID {
+		t.Errorf("hello watermark %d, ledger head %v", hello.EventID, evs)
+	}
+}
+
+// An idle stream still carries bytes: a ping every Heartbeat.
+func TestStreamPing(t *testing.T) {
+	s := svc(t)
+	h := NewHTTP(s)
+	h.Heartbeat = 50 * time.Millisecond
+	srv := httptest.NewServer(h.Routes())
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/events/stream", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	const ping = "event: ping\ndata: {}\n\n"
+	var out string
+	deadline := time.Now().Add(2 * time.Second)
+	for strings.Count(out, ping) < 2 && time.Now().Before(deadline) {
+		buf := make([]byte, 1024)
+		n, _ := resp.Body.Read(buf)
+		out += string(buf[:n])
+	}
+	if strings.Count(out, ping) < 2 {
+		t.Errorf("wanted two pings within 2s at a 50ms heartbeat, got %q", out)
+	}
+}
+
+// The Go client turns only change blocks into Changes; hello, ping and
+// unknown kinds are transport bytes. resync still ends the stream.
+func TestSubscribeSkipsNonChange(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		w.Write([]byte("event: hello\ndata: {\"event_id\":7}\n\n"))
+		w.Write([]byte("event: ping\ndata: {}\n\n"))
+		w.Write([]byte("event: change\ndata: {\"event_id\":8,\"ticket\":\"T\",\"kind\":\"note\"}\n\n"))
+		w.Write([]byte("data: {\"event_id\":9,\"ticket\":\"T\",\"kind\":\"note\"}\n\n"))
+		w.Write([]byte("event: resync\ndata: {}\n\n"))
+		w.Write([]byte("event: change\ndata: {\"event_id\":10,\"ticket\":\"T\",\"kind\":\"note\"}\n\n"))
+	}))
+	defer srv.Close()
+	c := &HTTPClient{Base: srv.URL}
+	sub, err := c.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []int64
+	for chg := range sub.Changes {
+		got = append(got, chg.EventID)
+	}
+	if len(got) != 2 || got[0] != 8 || got[1] != 9 {
+		t.Errorf("changes = %v, want [8 9]", got)
+	}
+}
+
 func mustCreate(t *testing.T, s Service, slug string) string {
 	t.Helper()
 	id := store.NewULID()
