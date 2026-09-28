@@ -41,6 +41,7 @@ fail=0
 ok()   { printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n' "$1"; fail=1; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want [$3], got [$2])"; fi; }
+hasnt() { if printf '%s' "$2" | grep -q -- "$3"; then bad "$1 (found: $3)"; else ok "$1"; fi; }
 
 # shellcheck disable=SC1090
 run() { HOME="${FAKE_HOME}" SERVITOR_INSTALL_LIB=1 \
@@ -55,13 +56,15 @@ EOF
 out="$(run 'hermes_hook install' 2>&1)" && ok "install succeeds" || { bad "install succeeds"; printf '%s\n' "$out"; }
 grep -q "# keep this comment" "${HERMES_CONFIG}" && ok "comments survive" || bad "comments survive"
 grep -q "model: test-model" "${HERMES_CONFIG}" && ok "existing keys survive" || bad "existing keys survive"
-grep -q "command: env SERVITOR_ACTOR=agent:hermes servitor hook --hermes" "${HERMES_CONFIG}" \
-  && ok "hook registered with actor env" || bad "hook registered with actor env"
+grep -q "command: ${FAKE_HOME}/.local/bin/servitor hook --hermes" "${HERMES_CONFIG}" \
+  && ok "hook registered with absolute path" || bad "hook registered with absolute path"
 run 'hermes_hook check' >/dev/null 2>&1 && ok "check passes after install" || bad "check passes after install"
 
 before="$(cat "${HERMES_CONFIG}")"
 run 'hermes_hook install' >/dev/null 2>&1 && ok "idempotent re-run succeeds" || bad "idempotent re-run succeeds"
 check "idempotent re-run changes nothing" "${before}" "$(cat "${HERMES_CONFIG}")"
+out="$(run 'install_hook_hermes' 2>&1)"
+hasnt "re-run when registered is silent (no note)" "${out}" "note:"
 [ ! -e "${HERMES_CONFIG}.bak" ] && ok "no .bak for a lossless edit" || bad "no .bak for a lossless edit"
 
 echo

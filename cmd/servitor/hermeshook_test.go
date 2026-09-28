@@ -34,6 +34,8 @@ func TestFirstTurn(t *testing.T) {
 func TestAgentName(t *testing.T) {
 	cases := []struct{ actor, env, want string }{
 		{"agent:hermes", "", "hermes"},
+		{"agent:cli", "Hermes", "hermes"},  // case-insensitive override
+		{"agent:Hermes", "", "hermes"},     // case-insensitive actor name
 		{"agent:cli", "hermes", "hermes"}, // env override wins
 		{"agent:claude", "", "claude"},
 		{"agent:cli", "", "cli"}, // unknown agent: the wording switch falls back to Claude

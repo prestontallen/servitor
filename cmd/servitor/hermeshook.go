@@ -21,12 +21,13 @@ type hermesPayload struct {
 
 // agentName picks the wording for host-specific hints. SERVITOR_AGENT wins
 // (the explicit override the contract fixed), else the actor's agent name;
-// Claude stays the default for anything unrecognised.
+// Claude stays the default for anything unrecognised. Comparison is
+// case-insensitive: an override of "Hermes" is the same agent as "hermes".
 func agentName(actor, agentEnv string) string {
-	if agentEnv != "" {
-		return agentEnv
+	if a := strings.ToLower(strings.TrimSpace(agentEnv)); a != "" {
+		return a
 	}
-	if n := strings.TrimPrefix(actor, "agent:"); n != actor && n != "" {
+	if n := strings.ToLower(strings.TrimPrefix(actor, "agent:")); n != strings.ToLower(actor) && n != "" {
 		return n
 	}
 	return "claude"

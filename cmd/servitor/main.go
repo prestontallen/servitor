@@ -73,6 +73,14 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			rest = append(rest, a)
 		}
 		args = rest
+		if hermes && env("SERVITOR_ACTOR") == "" {
+			// the hook runs inside a Hermes session with no servitor env
+			// file sourced; the mode knows its agent. Keeping the command a
+			// bare absolute path (no `env` prefix) lets `hermes hooks
+			// doctor` resolve the first token and survives a gateway whose
+			// PATH lacks the local bin directory.
+			c.Actor = "agent:hermes"
+		}
 		if c.HTTP == nil {
 			c.HTTP = &http.Client{Timeout: 3 * time.Second}
 		}

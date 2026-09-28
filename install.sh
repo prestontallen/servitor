@@ -355,7 +355,10 @@ install_hook() {
 # `hook --hermes` flag. Consent stays the user's: no hooks_auto_accept here.
 HERMES_CONFIG="${HOME}/.hermes/config.yaml"
 HERMES_PY="${HOME}/.hermes/hermes-agent/venv/bin/python"
-HERMES_HOOK_CMD="env SERVITOR_ACTOR=agent:hermes servitor hook --hermes"
+# absolute path on purpose: `hermes hooks doctor` checks the first bare
+# token as a file, and a gateway service may have no PATH entry for bin.
+# The actor is set inside `hook --hermes` (SERVITOR_ACTOR, when unset).
+HERMES_HOOK_CMD="${BIN_DIR}/servitor hook --hermes"
 
 hermes_hook() {
   # hermes_hook check|install: is the servitor pre_llm_call hook registered
@@ -415,6 +418,14 @@ if mode == "check":
 if have:
     sys.exit(0)
 
+# upgrade: an older spelling of our own hook line (e.g. the env-prefixed
+# command) gets a textual in-place replace so comments survive
+mine = [l for l in text.splitlines() if "servitor hook --hermes" in l and "command:" in l]
+if len(mine) == 1:
+    open(path, "w").write(text.replace(mine[0], f"    - command: {cmd}"))
+    yaml.safe_load(open(path))
+    sys.exit(0)
+
 entry = {"command": cmd, "timeout": 10}
 if "hooks" not in doc and not text.strip("\n"):
     # empty/new file: just write the hooks block
@@ -443,8 +454,10 @@ PY
 
 install_hook_hermes() {
   # Hermes hosts only. Idempotent; the sad paths refuse (nonzero aborts the
-  # install under set -e, same as the drift check would).
+  # install under set -e, same as the drift check would). Registration and
+  # the consent note stay silent once the hook is already in place.
   [ -d "${HOME}/.hermes" ] || return 0
+  hermes_hook check && return 0
   hermes_hook install && echo "==> Hermes pre_llm_call hook registered in ${HERMES_CONFIG}"
   echo "==> note: Hermes prompts once for hook consent on an interactive session; non-interactive runs (gateway, cron) need --accept-hooks or hooks_auto_accept in config.yaml"
 }
