@@ -118,9 +118,19 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 		}
 	}
 	if canonical {
-		name := strings.TrimPrefix(actor, "agent:")
-		fmt.Fprintf(w, "  git fetch origin\n  git worktree add -b agent/%s/%s ../%s-worktrees/%s origin/main\n",
-			name, slug, filepath.Base(top), slug)
+		// servitor.branchTemplate is the operator's naming preference; git's
+		// own local-over-global precedence decides which one applies
+		tmpl, _ := git(time.Second, "config", "--get", "servitor.branchTemplate")
+		if tmpl != "" && !strings.Contains(tmpl, "<ticket-slug>") {
+			fmt.Fprintf(w, "servitor.branchTemplate %q has no <ticket-slug>: ignored, using the default\n", tmpl)
+			tmpl = ""
+		}
+		if tmpl == "" {
+			tmpl = "agent/<agentname>/<ticket-slug>"
+		}
+		name := strings.NewReplacer("<agentname>", strings.TrimPrefix(actor, "agent:"), "<ticket-slug>", slug).Replace(tmpl)
+		fmt.Fprintf(w, "  git fetch origin\n  git worktree add -b %s ../%s-worktrees/%s origin/main\n",
+			name, filepath.Base(top), slug)
 		// cd does not move a Claude Code session; the tool does
 		fmt.Fprintf(w, "  Claude Code: then EnterWorktree path=../%s-worktrees/%s (cd alone leaves the session here)\n",
 			filepath.Base(top), slug)

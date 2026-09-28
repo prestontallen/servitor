@@ -121,7 +121,7 @@ never afterwards, or the record lags reality within minutes:
 
 | field | set when | value |
 |---|---|---|
-| `branch` | the branch is created | `agent/<you>/<slug>` |
+| `branch` | the branch is created | the name the hook prints: `agent/<you>/<slug>`, or the `servitor.branchTemplate` one |
 | `worktree` | the worktree is created | `../servitor-worktrees/<slug>` |
 | `head` | every commit | the short sha |
 | `pushed` | branch created (`false`), every push (`true`), every commit after a push (`false`) | `true` / `false` |

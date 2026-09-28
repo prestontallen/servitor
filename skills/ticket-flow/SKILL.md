@@ -37,12 +37,21 @@ Look at `servitor board` first. A card that is already `active` shows
 actor — coordinate or pick another card. That is the only mutex agents
 on different machines can see.
 
+The branch name is the one the hook prints in its `git worktree add`
+line: `agent/<agentname>/<ticket-slug>` by default, or the operator's
+`servitor.branchTemplate` git config when set (repo config over global,
+placeholders `<agentname>` and `<ticket-slug>`, e.g.
+`git config --global servitor.branchTemplate 'p/<ticket-slug>'`). A
+template without `<ticket-slug>` is ignored: one branch per ticket is the
+invariant, the rest is style. Record the name in `branch`; every later
+step reads it from there.
+
 ```bash
 export SERVITOR_ACTOR=agent:<agentname>
 servitor set <ref> --status active
 git fetch origin
-git worktree add -b agent/<agentname>/<ticket-slug> ../servitor-worktrees/<ticket-slug> origin/main
-servitor set <ref> branch=agent/<agentname>/<ticket-slug> worktree=../servitor-worktrees/<ticket-slug> pushed=false next="contract"
+git worktree add -b <branch> ../servitor-worktrees/<ticket-slug> origin/main
+servitor set <ref> branch=<branch> worktree=../servitor-worktrees/<ticket-slug> pushed=false next="contract"
 cd ../servitor-worktrees/<ticket-slug>
 ```
 
@@ -74,7 +83,7 @@ something unrelated, it goes in its own branch off main with its own PR.
 
 ```bash
 git fetch origin && git rebase origin/main   # in YOUR tree, before every push
-git push origin agent/<agentname>/<ticket-slug>
+git push origin <branch>
 servitor set <ref> head=<sha> pushed=true checkpoint=push-ok next="open the PR"
 ```
 
@@ -102,8 +111,8 @@ After the human merges:
 servitor gate <ref> shipped                   # merged on origin/main IS shipped
 git -C <canonical> fetch origin
 git -C <canonical> worktree remove --force ../servitor-worktrees/<ticket-slug>
-git -C <canonical> branch -D agent/<agentname>/<ticket-slug>
-git push origin --delete agent/<agentname>/<ticket-slug>
+git -C <canonical> branch -D <branch>
+git push origin --delete <branch>
 servitor set <ref> staging=- next="none, done"   # staging torn down with the worktree
 servitor log <ref> note "PR #N merged; branch + worktree released."
 ```
