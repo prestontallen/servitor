@@ -30,16 +30,26 @@
     font-size: 11px;
     font-family: inherit;
   }
-  .fl :global(.fl-node.st-active rect) { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 12%, var(--bg-inset)); }
-  .fl :global(.fl-node.st-blocked rect) { stroke: var(--fail); fill: color-mix(in srgb, var(--fail) 10%, var(--bg-inset)); }
-  .fl :global(.fl-node.st-done rect) { stroke: var(--ok); }
-  .fl :global(.fl-node.st-done text) { fill: var(--text-dim); }
-  .fl :global(.fl-node.st-queued rect) { stroke-dasharray: 3 3; }
+  .fl :global(.fl-node.k-edge rect) { stroke: var(--accent); fill: color-mix(in srgb, var(--accent) 12%, var(--bg-inset)); }
+  .fl :global(.fl-node.k-service rect) { stroke: var(--k-decision); fill: color-mix(in srgb, var(--k-decision) 10%, var(--bg-inset)); }
+  .fl :global(.fl-node.k-store rect) { stroke: var(--k-feedback); fill: color-mix(in srgb, var(--k-feedback) 10%, var(--bg-inset)); }
+  .fl :global(.fl-node.k-queue rect) { stroke: var(--warn); stroke-dasharray: 3 3; }
+  .fl :global(.fl-node.k-client rect) { stroke: var(--ok); }
+  .fl :global(.fl-node.k-external rect) { stroke: var(--text-dim); }
 
   .fl :global(.fl-edge) {
     fill: none;
     stroke: var(--line-strong);
     stroke-width: 1.5;
   }
-  .fl :global(.fl-edge.to-blocked) { stroke: var(--fail); }
+  .fl :global(.fl-head) { stroke: var(--line-strong); stroke-width: 1.5; }
+  .fl :global(.fl-elabel) {
+    fill: var(--text-dim);
+    font-size: 10px;
+    font-family: inherit;
+    paint-order: stroke;
+    stroke: var(--bg-raised);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
 </style>

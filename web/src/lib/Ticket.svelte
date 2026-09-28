@@ -253,11 +253,11 @@
       </section>
     {/if}
 
-    <!-- ================= flow: agent-submitted flowchart ================= -->
+    <!-- ================= flow: diagram of the work, not the ticket ================= -->
     {#if d.flow?.ok}
       {@const fl = d.flow}
       <section class="frame inst flow">
-        <span class="cap">Flow · {fl.nodes.length} nodes</span>
+        <span class="cap">Flow · {fl.nodes.length} participants</span>
         <span class="cap right">flow.set · v{fl.versions} · {fl.actor}</span>
         <Flow {history} />
       </section>

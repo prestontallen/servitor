@@ -42,33 +42,31 @@ test('dangling edge references are rejected', () => {
 
 // ---- layoutFlow: ranks left-to-right, siblings top-to-bottom ---------------
 
-const G = (nodes, edges) => ({ ok: true, nodes: nodes.map((n) => typeof n === 'string' ? { id: n, label: n, state: null } : n), edges });
+const G = (nodes, edges) => ({ ok: true, nodes: nodes.map((n) => typeof n === 'string' ? { id: n, label: n, kind: 'other' } : n), edges });
 
-test('three ranks advance left-to-right by longest path', () => {
+test('three ranks advance top-to-bottom by longest path', () => {
   // a -> b -> d, a -> c -> d: d sits on rank 2, the longest path
   const l = layoutFlow(G(['a', 'b', 'c', 'd'], [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'b', to: 'd' }, { from: 'c', to: 'd' }]));
-  const x = Object.fromEntries(l.nodes.map((n) => [n.id, n.x]));
-  assert.ok(x.a < x.b && x.a < x.c, 'sources left of their targets');
-  assert.ok(x.b < x.d && x.c < x.d, 'longest path advances right');
-  assert.equal(new Set(l.nodes.map((n) => n.x)).size, 3, 'three distinct rank columns');
+  const y = Object.fromEntries(l.nodes.map((n) => [n.id, n.y]));
+  assert.ok(y.a < y.b && y.a < y.c, 'sources above their targets');
+  assert.ok(y.b < y.d && y.c < y.d, 'longest path advances down');
+  assert.equal(new Set(l.nodes.map((n) => n.y)).size, 3, 'three distinct rank rows');
 });
 
-test('siblings in the same rank stack top-to-bottom', () => {
+test('siblings in the same rank sit side by side, left-to-right', () => {
   const l = layoutFlow(G(['a', 'b', 'c'], [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }]));
   const p = Object.fromEntries(l.nodes.map((n) => [n.id, [n.x, n.y]]));
-  assert.equal(p.b[0], p.c[0], 'same rank');
-  assert.ok(p.b[1] !== p.c[1], 'stacked apart');
-  const ids = [p.b, p.c].sort((u, v) => u[1] - v[1]).map((q) => q === p.b ? 'b' : 'c');
-  assert.equal(ids[0], 'b', 'declaration order wins ties top-to-bottom');
+  assert.equal(p.b[1], p.c[1], 'same rank');
+  assert.ok(p.b[0] < p.c[0], 'declaration order wins ties left-to-right');
 });
 
 test('cycles: back edges are ignored for ranking, still drawn, no hang', () => {
   const l = layoutFlow(G(['a', 'b', 'c'], [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a' }]));
-  const x = Object.fromEntries(l.nodes.map((n) => [n.id, n.x]));
+  const y = Object.fromEntries(l.nodes.map((n) => [n.id, n.y]));
   assert.equal(l.edges.length, 3, 'the back edge survives');
   // a 3-cycle cannot rank acyclically: exactly one edge is a back edge,
-  // the other two advance left-to-right
-  const back = l.edges.filter((e) => x[e.from] >= x[e.to]);
+  // the other two advance top-to-bottom
+  const back = l.edges.filter((e) => y[e.from] >= y[e.to]);
   assert.equal(back.length, 1, 'exactly one back edge');
 });
 
@@ -93,10 +91,10 @@ test('no two node boxes overlap', () => {
 
 test('barycenter: connected siblings order to cut crossings', () => {
   // two independent chains a->x, b->y; ranking both x,y on rank 1.
-  // barycenter pulls x under a, y under b (their sources), not reversed.
-  const l = layoutFlow(G(['a', 'b', 'x', 'y'], [{ from: 'a', to: 'x' }, { from: 'b', to: 'y' }]));
-  const p = Object.fromEntries(l.nodes.map((n) => [n.id, n.y]));
-  // order preservation across columns: targets keep their sources' order
+  // barycenter puts x under a, y under b (their sources), not reversed.
+  const l = layoutFlow(G(['a', 'b', 'y', 'x'], [{ from: 'a', to: 'x' }, { from: 'b', to: 'y' }]));
+  const p = Object.fromEntries(l.nodes.map((n) => [n.id, n.x]));
+  // order preservation across rows: targets keep their sources' order
   assert.equal(Math.sign(p.a - p.b), Math.sign(p.x - p.y), 'targets keep source order');
 });
 
@@ -108,32 +106,87 @@ test('svgFlow emits one box per node and one path per edge', () => {
   assert.match(svg, /^<svg/);
   assert.match(svg, /<\/svg>$/);
   assert.equal((svg.match(/<rect/g) || []).length, 2);
-  assert.equal((svg.match(/<path/g) || []).length, 1);
+  assert.equal((svg.match(/class="fl-edge"/g) || []).length, 1);
   assert.match(svg, />a</);
   assert.match(svg, />b</);
 });
 
-test('node state maps to the servitor status palette classes', () => {
-  const l = layoutFlow(G([
-    { id: 'q', label: 'q', state: 'queued' },
-    { id: 'r', label: 'r', state: 'active' },
-    { id: 's', label: 's', state: 'blocked' },
-    { id: 't', label: 't', state: 'done' },
-    { id: 'u', label: 'u', state: null }
-  ], []));
+test('node kind maps to the ledger hue classes; unknown and missing kinds default to other', () => {
+  const l = layoutFlow(foldFlow([ev('flow.set', { edges: [], nodes: [
+    { id: 'e', label: 'e', kind: 'edge' },
+    { id: 's', label: 's', kind: 'service' },
+    { id: 'd', label: 'd', kind: 'store' },
+    { id: 'q', label: 'q', kind: 'queue' },
+    { id: 'c', label: 'c', kind: 'client' },
+    { id: 'x', label: 'x', kind: 'external' },
+    { id: 'o', label: 'o', kind: 'other' },
+    { id: 'n', label: 'n' },
+    { id: 'z', label: 'z', kind: 'widget' }
+  ] })]));
   const svg = svgFlow(l);
-  assert.match(svg, /class="fl-node st-queued"/);
-  assert.match(svg, /class="fl-node st-active"/);
-  assert.match(svg, /class="fl-node st-blocked"/);
-  assert.match(svg, /class="fl-node st-done"/);
-  assert.match(svg, /class="fl-node"/); // plain stateless node
+  assert.match(svg, /class="fl-node k-edge"/);
+  assert.match(svg, /class="fl-node k-service"/);
+  assert.match(svg, /class="fl-node k-store"/);
+  assert.match(svg, /class="fl-node k-queue"/);
+  assert.match(svg, /class="fl-node k-client"/);
+  assert.match(svg, /class="fl-node k-external"/);
+  assert.match(svg, /class="fl-node k-other"/);
+  assert.equal((svg.match(/k-other"/g) || []).length, 3, 'missing, other and unknown kinds all render as other');
 });
 
-test('edges are dotted, lattice-stepped lines between node centers', () => {
-  const l = layoutFlow(G(['a', 'b', 'c'], [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }]));
+test('edge labels render on the path; long ones truncate with a title tooltip', () => {
+  const l = layoutFlow(G(['a', 'b'], [{ from: 'a', to: 'b', label: 'publishes user.created' }]));
+  const svg = svgFlow(l);
+  assert.match(svg, /class="fl-elabel"/);
+  const texts = [...svg.matchAll(/<text[^>]*>(.*?)<\/text>/g)].map((m) => m[1]);
+  assert.ok(texts.some((t) => t.endsWith('…')), 'the long edge label is clipped');
+  assert.match(svg, /<title>publishes user\.created<\/title>/);
+});
+
+test('both:true renders a double-headed edge; a plain edge gets one head', () => {
+  const l = layoutFlow(G(['a', 'b', 'c'], [
+    { from: 'a', to: 'b', both: true },
+    { from: 'b', to: 'c' }
+  ]));
+  const svg = svgFlow(l);
+  assert.equal((svg.match(/marker-start=/g) || []).length, 1, 'only the both edge has a start head');
+  assert.equal((svg.match(/marker-end=/g) || []).length, 2, 'every edge has an end head');
+});
+
+test('the old payload shape (state field) still renders: state ignored, defaults applied', () => {
+  const old = foldFlow([ev('flow.set', { nodes: [{ id: 'a', label: 'a', state: 'blocked' }], edges: [] })]);
+  assert.equal(old.ok, true);
+  assert.equal(old.nodes[0].kind, 'other');
+  const l = layoutFlow(old);
+  assert.match(svgFlow(l), /class="fl-node k-other"/);
+  assert.doesNotMatch(svgFlow(l), /st-|to-blocked/);
+});
+
+test('no ticket-status vocabulary survives in the rendered output', () => {
+  const l = layoutFlow(G(['a', 'b'], [{ from: 'a', to: 'b' }]));
+  assert.doesNotMatch(svgFlow(l), /st-queued|st-active|st-blocked|st-done|to-blocked/);
+});
+
+test('edges are dotted, lattice-stepped lines between box edges, heads outside the boxes', () => {
+  const l = layoutFlow(G(['a', 'b'], [{ from: 'a', to: 'b' }]));
   const svg = svgFlow(l);
   assert.match(svg, /stroke-dasharray/);
-  assert.match(svg, /class="fl-edge"/);
+  // a sits on row 0, b on row 1: the path leaves a's bottom edge and ends
+  // on b's top edge, so the end head is drawn in the corridor, not under b
+  const d = svg.match(/class="fl-edge" d="M (\S+) (\S+) V (\S+) H (\S+) V (\S+)"/);
+  assert.ok(d, 'stepped path: vertical, horizontal, vertical');
+  const [sy, ty] = [Number(d[2]), Number(d[5])];
+  const rects = [...svg.matchAll(/<rect x="\S+" y="(\S+)" width="\S+" height="(\S+)"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  assert.equal(sy, rects[0][0] + rects[0][1], 'starts on the source bottom edge');
+  assert.equal(ty, rects[1][0], 'ends on the target top edge');
+});
+
+test('a same-row edge loops below both boxes and stays inside the viewBox', () => {
+  const l = { nodes: [{ id: 'a', label: 'a', kind: 'other', x: 0, y: 0 }, { id: 'b', label: 'b', kind: 'other', x: 1, y: 0 }], edges: [{ from: 'a', to: 'b', label: 'peer' }] };
+  const svg = svgFlow(l);
+  const H = Number(svg.match(/viewBox="0 0 \S+ (\S+)"/)[1]);
+  const mid = Number(svg.match(/V (\S+) H/)[1]);
+  assert.ok(mid < H, 'the loop is not clipped');
 });
 
 test('svgFlow is pure: same layout in, byte-identical string out', () => {
@@ -148,4 +201,34 @@ test('long labels are truncated in text, full label kept as the title tooltip', 
   assert.ok(texts.every((t) => !t.includes('a very long node label')), 'no text node carries the untruncated label');
   assert.ok(texts.some((t) => t.endsWith('…')), 'the clipped text ends in an ellipsis');
   assert.match(svg, /<title>a very long node label that cannot fit<\/title>/);
+});
+
+test('no edge segment crosses a box it does not connect', () => {
+  // the v3 shape that failed by eye: a long gui -> api edge ran straight
+  // down through the human box
+  const f = foldFlow([ev('flow.set', {
+    nodes: ['skill', 'agent', 'human', 'mcp', 'api', 'db', 'gui'].map((id) => ({ id })),
+    edges: [
+      { from: 'skill', to: 'agent' }, { from: 'agent', to: 'human', both: true },
+      { from: 'agent', to: 'mcp' }, { from: 'mcp', to: 'api' }, { from: 'api', to: 'db' },
+      { from: 'gui', to: 'api', both: true }, { from: 'gui', to: 'human' }
+    ]
+  })]);
+  const svg = svgFlow(layoutFlow(f));
+  const boxes = [...svg.matchAll(/<rect x="(\S+)" y="(\S+)" width="(\S+)" height="(\S+)"/g)]
+    .map((m) => m.slice(1).map(Number)).map(([x, y, w, h]) => ({ x0: x, x1: x + w, y0: y, y1: y + h }));
+  for (const [, d] of svg.matchAll(/class="fl-edge" d="([^"]+)"/g)) {
+    const t = d.split(' ');
+    let x = Number(t[1]), y = Number(t[2]);
+    for (let i = 3; i < t.length; i += 2) {
+      const [nx, ny] = t[i] === 'H' ? [Number(t[i + 1]), y] : [x, Number(t[i + 1])];
+      const [lx, hx, ly, hy] = [Math.min(x, nx), Math.max(x, nx), Math.min(y, ny), Math.max(y, ny)];
+      for (const b of boxes) {
+        // strictly inside: touching a box edge is how an edge attaches
+        const crosses = lx < b.x1 && hx > b.x0 && ly < b.y1 && hy > b.y0;
+        assert.ok(!crosses, `segment ${d} crosses a box at ${b.x0},${b.y0}`);
+      }
+      x = nx; y = ny;
+    }
+  }
 });

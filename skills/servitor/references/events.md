@@ -102,6 +102,32 @@ servitor log <ref> review '{
 read-back; the GUI reserves no space for review (decided 2026-09-22) and
 the ledger fold is where a human sees the runs.
 
+## flow.set (ledger event)
+
+A diagram of the work, not the ticket: the participants the work touched
+and what moves between them. What it depicts is open. Offered at
+presentation (see the servitor skill), logged only when the human says yes.
+
+```
+servitor log <ref> flow.set '{
+  "nodes": [{"id": "gql", "label": "GraphQL edge", "kind": "edge"},
+            {"id": "db",  "label": "TimescaleDB",  "kind": "store"}],
+  "edges": [{"from": "gql", "to": "db", "label": "window query", "both": true}]
+}'
+```
+
+- `nodes` is required and non-empty; each `id` is a unique non-empty string.
+  `label` defaults to the id.
+- `kind` is one of `edge|service|store|queue|client|external|other`;
+  missing or unknown is `other`. It picks the box hue.
+- `edges[].from` and `to` must name nodes; no self edges. `label` names
+  what moves along the edge; `both: true` draws a round trip, arrowheads at
+  both ends.
+- Each event is a whole-graph snapshot. The latest renders; earlier ones
+  are versions (the Flow card shows `v<n>`) and stay in the ledger. Log a
+  new one when the picture changes, never a partial.
+- A payload that fails validation renders as `flow unparsable: <why>`.
+
 ## What the GUI reserves
 
 - Ticket page: Contract and Plan sections always render. An empty one shows
