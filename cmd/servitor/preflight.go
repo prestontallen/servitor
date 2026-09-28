@@ -82,7 +82,7 @@ func branchName(tmpl, agent, slug string, fields map[string]any, focused bool) (
 // origin/main, and who holds the focused card. Best effort: every git call
 // is capped, a failure prints what it could, and nothing here can block a
 // session. doc is the ctx aggregate for the focused ticket, or nil.
-func preflight(w io.Writer, dir, actor string, doc []byte) {
+func preflight(w io.Writer, dir, actor, agent string, doc []byte) {
 	git := func(timeout time.Duration, args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -200,8 +200,16 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 	if canonical && !noJira {
 		fmt.Fprintf(w, "  git fetch origin\n  git worktree add -b %s ../%s-worktrees/%s origin/main\n",
 			name, filepath.Base(top), slug)
-		// cd does not move a Claude Code session; the tool does
-		fmt.Fprintf(w, "  Claude Code: then EnterWorktree path=../%s-worktrees/%s (cd alone leaves the session here)\n",
-			filepath.Base(top), slug)
+		// cd moves a Hermes session (the tool call runs where it lands);
+		// Claude Code needs the EnterWorktree tool. Claude is the default
+		// wording for any agent the decision did not name.
+		switch agentName(actor, agent) {
+		case "hermes":
+			fmt.Fprintf(w, "  Hermes: then cd ../%s-worktrees/%s (cd alone moves the session)\n",
+				filepath.Base(top), slug)
+		default:
+			fmt.Fprintf(w, "  Claude Code: then EnterWorktree path=../%s-worktrees/%s (cd alone leaves the session here)\n",
+				filepath.Base(top), slug)
+		}
 	}
 }

@@ -188,7 +188,7 @@ func TestPreflight(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull) // a host Jira template would swap the worktree hint
 	var b bytes.Buffer
 	dir := t.TempDir()
-	preflight(&b, dir, "agent:test", nil)
+	preflight(&b, dir, "agent:test", "", nil)
 	if !strings.Contains(b.String(), "not a git checkout") {
 		t.Errorf("non-git dir: %q", b.String())
 	}
@@ -197,7 +197,7 @@ func TestPreflight(t *testing.T) {
 	}
 	b.Reset()
 	start := time.Now()
-	preflight(&b, dir, "agent:test", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z",
+	preflight(&b, dir, "agent:test", "", []byte(`{"slug":"x","status":"active","active_by":"agent:other","active_since":"2026-09-18T00:00:00Z",
 		"fields":{"branch":"agent/test/x","head":"abc1234","pushed":false,"checkpoint":"commit-ok","next":"await push prompt","area":"cli","staging":""}}`))
 	out := b.String()
 	for _, want := range []string{"canonical checkout", "CREATE A WORKTREE", "origin/main: unavailable", "active by agent:other", "agent/test/x", "EnterWorktree path=../",
@@ -211,7 +211,7 @@ func TestPreflight(t *testing.T) {
 		t.Errorf("handoff lines wrong:\n%s", out)
 	}
 	b.Reset()
-	preflight(&b, dir, "agent:test", []byte(`{"slug":"y","status":"queued"}`))
+	preflight(&b, dir, "agent:test", "", []byte(`{"slug":"y","status":"queued"}`))
 	if strings.Contains(b.String(), "handoff") {
 		t.Errorf("no fields, no handoff lines:\n%s", b.String())
 	}
@@ -233,7 +233,7 @@ func TestPreflight(t *testing.T) {
 		}
 	}
 	b.Reset()
-	preflight(&b, dir, "agent:test", nil)
+	preflight(&b, dir, "agent:test", "", nil)
 	out = b.String()
 	if !strings.Contains(out, "canonical checkout on agent/other/thing: MUST BE ON MAIN") || !strings.Contains(out, "checkout main") || !strings.Contains(out, "worktree add") {
 		t.Errorf("off-main canonical: %q", out)
@@ -242,7 +242,7 @@ func TestPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.Reset()
-	preflight(&b, dir, "agent:test", nil)
+	preflight(&b, dir, "agent:test", "", nil)
 	if out = b.String(); strings.Contains(out, "MUST BE ON MAIN") || !strings.Contains(out, "canonical checkout on main: CREATE A WORKTREE") {
 		t.Errorf("canonical on main: %q", out)
 	}
@@ -290,7 +290,7 @@ func TestPreflightBranchTemplate(t *testing.T) {
 		}
 		exec.Command("git", args...).Run() // unset of an unset key exits 5
 		var b bytes.Buffer
-		preflight(&b, dir, "agent:test", c.doc)
+		preflight(&b, dir, "agent:test", "", c.doc)
 		out := b.String()
 		for _, s := range c.want {
 			if !strings.Contains(out, s) {
@@ -314,7 +314,7 @@ func TestPreflightRegisterLine(t *testing.T) {
 		t.Fatal("empty home must not report the tone skill")
 	}
 	var b bytes.Buffer
-	preflight(&b, t.TempDir(), "agent:test", nil)
+	preflight(&b, t.TempDir(), "agent:test", "", nil)
 	if strings.Contains(b.String(), "register:") {
 		t.Errorf("register line without the link:\n%s", b.String())
 	}
@@ -328,7 +328,7 @@ func TestPreflightRegisterLine(t *testing.T) {
 			t.Errorf("%s: link not detected", root)
 		}
 		b.Reset()
-		preflight(&b, t.TempDir(), "agent:test", nil)
+		preflight(&b, t.TempDir(), "agent:test", "", nil)
 		if !strings.HasPrefix(b.String(), "register: servitor-tone ON\n") {
 			t.Errorf("%s: register line must come first:\n%s", root, b.String())
 		}
