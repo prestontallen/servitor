@@ -29,6 +29,32 @@ export async function get(path) {
   return r.json();
 }
 
+// One GraphQL read: POST {query, variables} to /api/graphql, same token
+// flow as get(). A GraphQL error becomes an Error carrying the server's
+// stable code (extensions.code) so callers can key on it like REST's.
+export async function gql(query, variables = {}) {
+  const r = await fetch(withToken('/api/graphql'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, variables })
+  });
+  if (r.status === 401) {
+    const t = prompt('API token:');
+    if (t) {
+      setToken(t);
+      return gql(query, variables);
+    }
+  }
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const body = await r.json();
+  if (body.errors?.length) {
+    const err = new Error(body.errors[0].message);
+    err.code = body.errors[0].extensions?.code;
+    throw err;
+  }
+  return body.data;
+}
+
 export function streamURL() {
   return withToken('/api/events/stream');
 }

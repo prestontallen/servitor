@@ -16,6 +16,8 @@
     r = 2.5,                 // dot radius (px)
     maxRows = 12,            // rows a side before a dot becomes a quantum
     ticks = [],              // [{t, label, sig?, color?, title?}]
+    tickLabels = 'always',   // 'hover': one marker per column, labels while hovered
+    maxLabelRows = 4,        // hover mode: label rows reserved under the plot
     runs = [],               // [{start, end, title, color?}]
     highlight = null,        // {from, to}
     axis = [],               // [{t, label}]
@@ -41,7 +43,7 @@
 
   $effect(() => {
     if (!chart) return;
-    chart.setOptions({ span, ticks, runs, highlight, axis });
+    chart.setOptions({ span, ticks, tickLabels, maxLabelRows, runs, highlight, axis });
     chart.setData(events);
   });
 </script>

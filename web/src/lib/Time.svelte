@@ -1,63 +1,28 @@
 <script>
-  // Time view: the ledger itself, one dot per event. One request to
-  // /api/events is folded client-side (timeview.js) into dots; the
-  // thirty-day overview strip carries the brush and the window lattice
-  // below it is the zoomed view, both from the same dots and one legend.
+  // Time view: the ledger itself, one dot per event. One GraphQL query per
+  // window (timeview.js TIME_WINDOW_QUERY) brings the events inside it,
+  // each with its ticket's slug, and the timeline segments for the same
+  // bounds; the events fold client-side into dots for the one lattice.
   // Hue by kind, actor or ticket; signals-only drops the transitions; the
   // legend is a filter. A column opens the journal at its newest event, a
-  // gate tick opens the dossier. Flow is one lane per ticket that moved in
-  // the window, from /api/timeline's segments, which are still the right
-  // shape for it.
-  import { get } from './api.svelte.js';
-  import { board, arcs, openTicket, say } from './state.svelte.js';
+  // gate tick opens the dossier. Flow is one lane per ticket the window
+  // touched, from the segments.
+  import { gql } from './api.svelte.js';
+  import { board, openTicket, say } from './state.svelte.js';
   import { live } from './live.svelte.js';
   import DotLattice from './DotLattice.svelte';
-  import { parseTimeHash, timeHash, flowLanes, dayKey, daysIn, fmtDur } from './timeview.js';
-  import { foldLedger, hueBy, filterDots, topTickets, columnSummary, columnAt, dayTotals, rangeFromLocal, minuteKey, stepWindow } from './timeview.js';
+  import Lanes from './Lanes.svelte';
+  import { parseTimeHash, timeHash, flowLanes, touchedTickets, dayKey, daysIn, fmtDur } from './timeview.js';
+  import { foldLedger, hueBy, filterDots, topTickets, columnSummary, columnAt, rangeFromLocal, minuteKey, stepWindow } from './timeview.js';
+  import { TIME_WINDOW_QUERY, MAX_PAGES, windowVars, mergePages, needsRefetch } from './timeview.js';
 
-  const OUTER_DAYS = 30;
   const DAY = 86400000, HOUR = 3600000;
   const CELL = 8;
-  const BAND_H = 9;
   const SIDES = { human: 'up', agent: 'down' };
   const SIDE_OPACITY = { human: 1, agent: 0.7 };
-
-  // ---- the ledger ------------------------------------------------------------
-  // one request, newest first, the whole ledger the endpoint will give
-  // (cap 10000, no time filter); refreshed on live changes but not more
-  // than once a while
-  let raw = $state([]);
-  let ledgerError = $state(null);
-  let fetchedAt = 0;
-  const REFRESH_MS = 20000;
   const now = () => Date.now();
 
-  async function loadLedger() {
-    try {
-      raw = await get('/api/events?limit=10000');
-      ledgerError = null;
-      fetchedAt = now();
-    } catch (e) {
-      ledgerError = e.message;
-    }
-  }
-  $effect(() => {
-    void live.changeCount;
-    if (now() - fetchedAt < REFRESH_MS) return;
-    loadLedger();
-  });
-
-  // ticket ulid -> slug: board, arcs and their members, then the flow segments
-  const slugMap = $derived.by(() => {
-    const m = new Map();
-    for (const c of board.cards) m.set(c.ulid, c.slug);
-    for (const a of arcs.list) { m.set(a.ulid, a.slug); for (const x of a.members) m.set(x.ulid, x.slug); }
-    for (const s of inner.segments) m.set(s.ticket_ulid, s.slug);
-    return m;
-  });
-  const dots = $derived(foldLedger(raw, (u) => slugMap.get(u)));
-
-  // ---- the window: the shared brush selection; the hash makes it linkable.
+  // ---- the window: the hash makes it linkable.
   // Read once at construction and then only on hashchange: a bare #/time
   // defaults to a window ending now, so an effect that both re-read the
   // hash and wrote the window would chase the clock forever.
@@ -73,8 +38,42 @@
     return () => window.removeEventListener('hashchange', apply);
   });
   const windowSpan = $derived({ min: from, max: to });
-  // the overview strip spans thirty days or the chosen range, whichever is longer
-  const outerSpan = $derived({ min: Math.min(now() - OUTER_DAYS * DAY, from), max: Math.max(now(), to) });
+
+  // ---- the window read ---------------------------------------------------------
+  // one query for the window, paged on next_before_id up to MAX_PAGES; the
+  // response is kept only for the window it was asked for. Live changes
+  // refetch only a window that can still gain events (needsRefetch) and
+  // not more than once a while.
+  let win = $state({ events: [], segments: [], truncated: false });
+  let ledgerError = $state(null);
+  let fetchedAt = 0;
+  const REFRESH_MS = 20000;
+
+  async function loadWindow(f, t) {
+    try {
+      const pages = [];
+      let before = null;
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const page = await gql(TIME_WINDOW_QUERY, windowVars(f, t, before));
+        pages.push(page);
+        before = page.events.next_before_id;
+        if (before == null) break;
+      }
+      if (from !== f || to !== t) return;   // the window moved while we read
+      win = mergePages(pages);
+      ledgerError = null;
+      fetchedAt = now();
+    } catch (e) {
+      if (from === f && to === t) ledgerError = e.message;
+    }
+  }
+  $effect(() => { fetchedAt = 0; loadWindow(from, to); });
+  $effect(() => {
+    void live.changeCount;
+    if (!fetchedAt || !needsRefetch(to, fetchedAt) || now() - fetchedAt < REFRESH_MS) return;
+    loadWindow(from, to);
+  });
+  const dots = $derived(foldLedger(win.events));
 
   // ---- the header row: the window as two local times, to the minute ---------------
   let fromAt = $state(minuteKey(initial.from));
@@ -92,16 +91,6 @@
     location.hash = timeHash(w.from, w.to);
   }
 
-  // flow segments for the window, refetched when the brush moves
-  let inner = $state({ segments: [], error: null });
-  $effect(() => {
-    if (!to) return;
-    const f = from, t = to;
-    get(`/api/timeline?since=${new Date(f).toISOString()}&until=${new Date(t).toISOString()}`)
-      .then((d) => { if (from === f && to === t) inner = { segments: d.segments, error: null }; })
-      .catch((e) => (inner = { ...inner, error: e.message }));
-  });
-
   // ---- hue, filters, legend ---------------------------------------------------
   let hue = $state('kind');          // kind | actor | ticket
   let signalsOnly = $state(false);
@@ -112,8 +101,7 @@
   const top = $derived(hue === 'ticket' ? topTickets(filterDots(windowDots, { signalsOnly })) : []);
   const hued = $derived(hueBy(dots, hue, top));
   const groups = $derived(hued.groups);
-  const outerDrawn = $derived(filterDots(hued.dots, { signalsOnly, only }));
-  const windowDrawn = $derived(outerDrawn.filter((d) => d.t >= from && d.t <= to));
+  const windowDrawn = $derived(filterDots(hued.dots, { signalsOnly, only }).filter((d) => d.t >= from && d.t <= to));
   const counts = $derived.by(() => {
     const c = {};
     for (const d of filterDots(hued.dots.filter((x) => x.t >= from && x.t <= to), { signalsOnly })) c[d.group] = (c[d.group] || 0) + 1;
@@ -123,12 +111,10 @@
   function toggleOnly(name) { only = only === name ? null : name; }
 
   // ---- gates as ticks on the window lattice --------------------------------------
-  // scaled to the window so the labels stay readable: every gate across a
-  // day or two, only the human's contract approvals across a fortnight,
-  // none beyond that (the readout still counts them)
-  const tickGate = (d, len) => len <= 2 * DAY ? true : len <= 14 * DAY ? d.payload.gate === 'contract_approved' : false;
+  // every gate in the window, in time order (the lib keeps that order and
+  // labels each tick with its index, so a click maps back)
   const gateTicks = $derived(windowDrawn
-    .filter((d) => d.kind === 'gate' && tickGate(d, to - from))
+    .filter((d) => d.kind === 'gate')
     .sort((a, b) => a.t - b.t)
     .map((d) => ({
       t: d.t, ticket: d.ticket, label: '✠ ' + String(d.payload.gate || 'gate').replace('_approved', ''), sig: d.slug,
@@ -142,9 +128,6 @@
   const midnight = (day) => { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
   const stamp = (ms) => new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  const cadenceEvery = typeof window !== 'undefined' && window.innerWidth < 700 ? 10 : 5;
-  const cadenceAxis = $derived(daysIn(outerSpan.min, outerSpan.max).filter((_, i) => i % cadenceEvery === 0)
-    .map((d) => ({ t: midnight(d), label: dayLabel(midnight(d)) })).filter((a) => a.t >= outerSpan.min));
   const windowAxis = $derived.by(() => {
     const len = to - from;
     if (len <= 2 * DAY) {
@@ -158,33 +141,7 @@
     return daysIn(from, to).filter((_, i) => i % every === 0).map((d) => ({ t: midnight(d), label: dayLabel(midnight(d)) })).filter((a) => a.t >= from);
   });
 
-  let cadenceQuantum = $state(1);
   let windowQuantum = $state(1);
-
-  // ---- brush: a capture layer over the overview strip ----------------------------
-  let capEl = $state(null);
-  let dragging = $state(false);
-  let dragCur = $state(0);
-  let anchor = $state(0);
-  function brushT(e) {
-    const rect = capEl.getBoundingClientRect();
-    return outerSpan.min + ((e.clientX - rect.left) / rect.width) * (outerSpan.max - outerSpan.min);
-  }
-  function brushDown(e) {
-    dragging = true;
-    dragCur = brushT(e);
-    anchor = Math.abs(dragCur - from) < Math.abs(dragCur - to) ? from : to;   // nearest window edge
-    capEl.setPointerCapture(e.pointerId);
-  }
-  function brushMove(e) { if (dragging) dragCur = brushT(e); }
-  function brushUp() {
-    if (!dragging) return;
-    dragging = false;
-    const lo = Math.min(anchor, dragCur), hi = Math.max(anchor, dragCur);
-    if (hi - lo < HOUR) pinDay(dayKey(dragCur));   // a click pins the clicked day
-    else location.hash = timeHash(lo, hi);
-  }
-  const highlight = $derived(dragging ? { from: Math.min(anchor, dragCur), to: Math.max(anchor, dragCur) } : { from, to });
 
   function pinDay(day) { const s = midnight(day); location.hash = timeHash(s, s + DAY); }
   function preset(days) { const n = now(); location.hash = timeHash(n - days * DAY, n); }
@@ -202,7 +159,9 @@
   function windowClick(e) {
     const tick = e.target.closest?.('.dl-tick');
     if (tick) {
-      const i = [...winEl.querySelectorAll('.dl-tick')].indexOf(tick);   // the lib draws ticks in time order
+      // dotlattice 0.2.0 labels each tick with its time-order index; the
+      // DOM-order fallback covers 0.1.0 and goes with the v0.2.0 bump
+      const i = tick.dataset.index != null ? Number(tick.dataset.index) : [...winEl.querySelectorAll('.dl-tick')].indexOf(tick);
       const g = gateTicks[i];
       if (g) { openTicket(g.ticket); return; }
     }
@@ -219,16 +178,20 @@
   const windowHuman = $derived(windowDots.filter((d) => d.side === 'human').length);
   const windowGates = $derived(windowDots.filter((d) => d.kind === 'gate').length);
   const blockedNow = $derived(board.cards.filter((c) => c.status === 'blocked').length);
-  const tail = $derived(dayTotals(outerDrawn).slice(-5));
 
-  // ---- flow ------------------------------------------------------------------------
-  const lanes = $derived(flowLanes(inner.segments, board.cards, from, to));
-  let laneW = $state(0);
-  const RUN_STEP = 6;
+  // ---- flow: only the tickets the window touched, drawn by the lib's Lanes ---------
+  const lanes = $derived(flowLanes(win.segments, board.cards, from, to, touchedTickets(windowDots)));
+  const laneRows = $derived(lanes.map((l) => ({
+    id: l.ulid, label: l.slug, title: l.title,
+    bars: l.bars.map((b) => ({ start: b.start, end: b.end, kind: b.phase }))
+  })));
   const PHASES = ['queued', 'shaping', 'building', 'checking', 'shipping'];
-  function laneDur(l) {
-    return l.bars.map((b) => ({ phase: b.phase, dur: fmtDur((b.x1 - b.x0) * (to - from)) }));
-  }
+  // the phases in the card-word tokens; blocked is the hatch the board uses
+  const KINDS = {
+    queued: 'var(--w-queued)', shaping: 'var(--w-shaping)', building: 'var(--w-building)',
+    checking: 'var(--w-checking)', shipping: 'var(--w-shipping)',
+    blocked: { color: 'var(--blood)', hatch: 'var(--blood-dim)' }
+  };
 </script>
 
 <section class="time">
@@ -279,27 +242,16 @@
       </span>
     </div>
 
-    <!-- ================= overview: thirty days, the window as a highlight, drag to move it ================= -->
-    <div class="frame cad" data-testid="cadence">
-      <span class="cap">Overview · {Math.round((outerSpan.max - outerSpan.min) / DAY)} days</span>
-      <div class="brushwrap">
-        <DotLattice span={outerSpan} events={outerDrawn} {groups} sides={SIDES} sideOpacity={SIDE_OPACITY} axis={cadenceAxis} {highlight} maxRows={14} bind:quantum={cadenceQuantum} label="ledger events per column over thirty days, human above the line, agents below" />
-        <div class="cap-layer" bind:this={capEl} onpointerdown={brushDown} onpointermove={brushMove} onpointerup={brushUp} onpointercancel={brushUp} data-testid="cadence-brush"></div>
-      </div>
-      <div class="chain">
-        {#each tail as d (d.day)}
-          <span class="link">{d.day.slice(5)} <b>{d.total}</b></span>
-        {/each}
-        <span class="link key">human above · agent below{#if cadenceQuantum > 1} · one dot is {cadenceQuantum} events{/if}</span>
-      </div>
-    </div>
+    {#if win.truncated}
+      <p class="muted">window truncated at {win.events.length} events — narrow it</p>
+    {/if}
 
-    <!-- ================= the window: same dots, finer bucket, gates as ticks ================= -->
+    <!-- ================= the window: one dot per event, gates as ticks ================= -->
     <div class="frame win" data-testid="window">
       <span class="cap">{windowIsDay ? `day · ${selectedDay}` : `window · ${fmtDur(to - from)}`}</span>
-      <span class="cap right">hover a column · click it for the journal{#if gateTicks.length}{' · click ✠ for the dossier'}{/if}</span>
+      <span class="cap right">hover a column · click it for the journal{#if gateTicks.length}{' · hover ✠ · click its label for the dossier'}{/if}</span>
       <div class="winwrap" bind:this={winEl} onclick={windowClick} role="presentation">
-        <DotLattice span={windowSpan} events={windowDrawn} {groups} sides={SIDES} sideOpacity={SIDE_OPACITY} axis={windowAxis} ticks={gateTicks} {tooltip} cell={CELL} maxRows={14} bind:quantum={windowQuantum} label="ledger events per column in the window, human above the line, agents below" />
+        <DotLattice span={windowSpan} events={windowDrawn} {groups} sides={SIDES} sideOpacity={SIDE_OPACITY} axis={windowAxis} ticks={gateTicks} tickLabels="hover" {tooltip} cell={CELL} maxRows={14} bind:quantum={windowQuantum} label="ledger events per column in the window, human above the line, agents below" />
       </div>
       <div class="chain">
         <span class="link">{windowDrawn.length} drawn<b>{windowHuman} by the human</b></span>
@@ -307,45 +259,15 @@
       </div>
     </div>
 
-    <!-- ================= flow: one lane per ticket, phase as the ramp, blocked as red dots ================= -->
+    <!-- ================= flow: one lane per touched ticket, phase bars, blocked hatched ================= -->
     <div class="frame flow" data-testid="flow">
       <span class="cap">Flow · phase per card</span>
-      <span class="cap right">{lanes.length} card{lanes.length === 1 ? '' : 's'} moved in the window</span>
-      {#if inner.error}<p class="muted">timeline unreachable: {inner.error}</p>{/if}
-      {#each lanes as l (l.ulid)}
-        <div class="lane">
-          <button class="slug" onclick={() => openTicket(l.ulid)} title={l.title}>{l.slug}</button>
-          <div class="bandwrap" bind:clientWidth={laneW}>
-            {#if laneW > 0}
-              <svg width={laneW} height={BAND_H}>
-                {#each l.bars as b}
-                  {@const x0 = b.x0 * laneW}
-                  {@const w = Math.max(b.x1 * laneW - x0, 1)}
-                  {#if b.phase === 'blocked'}
-                    <g class="blocked">
-                      {#each { length: Math.max(1, Math.floor(w / RUN_STEP)) } as _, i}
-                        <rect x={x0 + i * RUN_STEP + 1} y={BAND_H / 2 - 2} width="4" height="4" />
-                      {/each}
-                      <title>blocked: {fmtDur((b.x1 - b.x0) * (to - from))}</title>
-                    </g>
-                  {:else}
-                    <rect x={x0} y="0" width={w} height={BAND_H} class="seg p-{b.phase}">
-                      <title>{b.phase}: {fmtDur((b.x1 - b.x0) * (to - from))}</title>
-                    </rect>
-                  {/if}
-                {/each}
-              </svg>
-            {/if}
-          </div>
-        </div>
-        <div class="chain lanechain">
-          {#each laneDur(l) as b}
-            <span class="link" class:blocked={b.phase === 'blocked'}><i class="p-{b.phase}"></i>{b.phase} <b>{b.dur}</b></span>
-          {/each}
-        </div>
+      <span class="cap right">{lanes.length} card{lanes.length === 1 ? '' : 's'} touched in the window · click a card for the dossier · hover a bar</span>
+      {#if laneRows.length}
+        <Lanes span={windowSpan} lanes={laneRows} kinds={KINDS} axis={windowAxis} cell={CELL} onLabel={(l) => openTicket(l.id)} label="phase per card across the window" />
       {:else}
-        <p class="muted empty">no cards moved in this window</p>
-      {/each}
+        <p class="muted empty">no cards touched in this window</p>
+      {/if}
       <div class="plegend">
         {#each PHASES as p (p)}<span><i class="p-{p}"></i>{p}</span>{/each}
         <span><i class="p-blocked"></i>blocked</span>
@@ -394,26 +316,12 @@
   .lg.off { opacity: 0.4; }
 
   .frame { padding: 14px 12px 10px; }
-  .brushwrap { position: relative; }
-  .cap-layer { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
   .winwrap { cursor: pointer; }
   .winwrap :global(.dl-tick) { cursor: pointer; }
 
-  .seg.p-queued { fill: var(--w-queued); }
-  .seg.p-shaping { fill: var(--w-shaping); }
-  .seg.p-building { fill: var(--w-building); }
-  .seg.p-checking { fill: var(--w-checking); }
-  .seg.p-shipping { fill: var(--w-shipping); }
-  .blocked rect { fill: var(--blood); }
-  .lane { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
-  .slug {
-    width: 150px; flex: none; text-align: left; font-size: 11px; border: none; background: none;
-    color: var(--phos-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; min-height: 0; min-width: 0;
-    text-transform: none; letter-spacing: 0;
-  }
-  .slug:hover { color: var(--phos); }
-  .bandwrap { flex: 1; min-width: 0; background: repeating-linear-gradient(90deg, var(--rust) 0 1px, transparent 1px 8px); }
-  .lanechain { margin: 2px 0 0 160px; }
+  .flow :global(.dl-lanes) { margin-top: 4px; }
+  .flow :global(.dl-lane-label) { color: var(--phos-dim); text-transform: none; letter-spacing: 0; }
+  .flow :global(.dl-lane-label:hover) { color: var(--phos); }
   .chain { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 11px; color: var(--bone-dim); }
   .link { white-space: nowrap; }
   .link b { color: var(--bone); font-weight: 500; margin-left: 4px; }
@@ -435,7 +343,5 @@
     .arrow { display: none; }
     .presets { margin-left: 0; }
     .legend { margin-left: 0; }
-    .slug { width: 90px; font-size: 10px; }
-    .lanechain { margin-left: 100px; }
   }
 </style>

@@ -55,14 +55,18 @@ export function timeHash(from, to) {
 // first in board order, then tickets the board no longer lists (done or
 // dropped inside the window) in the order they first appear. Each segment
 // becomes a bar clipped to the window; segments outside it are dropped.
+// `touched` (a Set of ticket ulids, or null for no filter) keeps only the
+// tickets the ledger actually wrote to inside the window: a card that sat
+// in one phase across the whole window has a segment but did no work.
 // Returns lanes of {ulid, slug, title, bars:[{x0, x1, phase}]} in
 // window-fraction coordinates (0..1) — the component multiplies by width.
-export function flowLanes(segments, cards, from, to) {
+export function flowLanes(segments, cards, from, to, touched = null) {
   const byId = new Map(cards.map((c) => [c.ulid, c]));
   const lanes = new Map();
   for (const c of cards) lanes.set(c.ulid, { ulid: c.ulid, slug: c.slug || c.ulid, title: c.title || c.slug || c.ulid, bars: [] });
   for (const s of segments) {
     const ulid = s.ticket_ulid;
+    if (touched && !touched.has(ulid)) continue;
     if (!lanes.has(ulid)) {
       const c = byId.get(ulid);
       lanes.set(ulid, { ulid, slug: s.slug || c?.slug || ulid, title: c?.title || s.slug || ulid, bars: [] });
@@ -70,9 +74,14 @@ export function flowLanes(segments, cards, from, to) {
     const start = Math.max(t(s.from), from);
     const end = Math.min(t(s.to), to);
     if (end - start <= 0) continue;
-    lanes.get(ulid).bars.push({ x0: (start - from) / (to - from), x1: (end - from) / (to - from), phase: s.phase });
+    lanes.get(ulid).bars.push({ start, end, x0: (start - from) / (to - from), x1: (end - from) / (to - from), phase: s.phase });
   }
   return [...lanes.values()].filter((l) => l.bars.length);
+}
+
+// the tickets a set of dots wrote to
+export function touchedTickets(dots) {
+  return new Set(dots.map((d) => d.ticket));
 }
 
 // ---- Cadence: hourly buckets -> per-day totals ------------------------------
@@ -157,12 +166,14 @@ export const TICKET_PALETTE = ['var(--t1)', 'var(--t2)', 'var(--t3)', 'var(--t4)
 export const TICKET_OTHER = 'var(--k-transition)';
 export const TICKET_TOP = 6;
 
-// slugOf: ticket ulid -> slug (falls back to the ulid's first eight chars)
+// The slug is the event's own ticket.slug when the read carried one (the
+// GraphQL window query does), else slugOf(ulid), else the ulid's first
+// eight chars.
 export function foldLedger(events, slugOf = () => null) {
   return events.map((e) => ({
     t: t(e.ts), id: e.id, kind: e.kind, group: kindGroup(e.kind),
     side: e.actor_type === 'human' ? 'human' : 'agent',
-    ticket: e.ticket_ulid, slug: slugOf(e.ticket_ulid) || (e.ticket_ulid || '').slice(0, 8),
+    ticket: e.ticket_ulid, slug: e.ticket?.slug || slugOf(e.ticket_ulid) || (e.ticket_ulid || '').slice(0, 8),
     signal: e.class === 'signal', actor: e.actor, payload: e.payload || {}
   }));
 }
@@ -271,4 +282,56 @@ export function minuteKey(ms) {
 export function stepWindow(from, to, dir) {
   const len = to - from;
   return { from: from + dir * len, to: to + dir * len };
+}
+
+// ---- the window read ---------------------------------------------------------
+// One GraphQL query per window: the events inside it, each with its
+// ticket's slug, and the timeline segments for the same bounds. The
+// server bound is [since, until) and the view's window is inclusive, so
+// until is to + 1 ms. A full page (10000) is followed on next_before_id
+// up to MAX_PAGES pages; past that the view says the window is truncated
+// rather than silently dropping the oldest.
+export const TIME_WINDOW_QUERY = `query TimeWindow($since: Time, $until: Time, $before: Int) {
+  events(since: $since, until: $until, before_id: $before, limit: 10000) {
+    next_before_id
+    events { id ulid ticket_ulid ts actor actor_type kind class payload ticket { slug } }
+  }
+  timeline(since: $since, until: $until) {
+    segments { ticket_ulid slug phase from to }
+  }
+}`;
+export const MAX_PAGES = 5;
+
+export function windowVars(from, to, before = null) {
+  return { since: new Date(from).toISOString(), until: new Date(to + 1).toISOString(), before };
+}
+
+// pages: the query's data objects in the order fetched, newest page first;
+// the caller stops after MAX_PAGES. Events are deduped by id in case a
+// page boundary moved under a live append; segments come from the first
+// page, the same for every page of one window.
+export function mergePages(pages) {
+  const seen = new Set();
+  const events = [];
+  for (const p of pages) {
+    for (const e of p.events.events) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      events.push(e);
+    }
+  }
+  events.sort((a, b) => b.id - a.id);
+  const last = pages[pages.length - 1];
+  return {
+    events,
+    segments: pages[0]?.timeline?.segments ?? [],
+    truncated: pages.length >= MAX_PAGES && last?.events?.next_before_id != null
+  };
+}
+
+// The ledger is append-only: a window whose end is before the last fetch
+// cannot gain an event, so a live change needs no refetch. A window that
+// reaches the last fetch, or beyond it into now, can.
+export function needsRefetch(to, fetchedAt) {
+  return !(fetchedAt > to);
 }

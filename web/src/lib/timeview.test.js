@@ -40,6 +40,10 @@ test('flowLanes: clips segments to the window, keeps board order, drops empty la
   assert.equal(bar1.x0, 0); // clipped at the window edge
   assert.ok(Math.abs(bar1.x1 - 3600000 / (to - from)) < 1e-9);
   assert.equal(bar2.x1, 1); // clipped at the window end
+  // the clipped bounds in ms too, for a renderer that takes timestamps
+  assert.equal(bar1.start, from);
+  assert.equal(bar1.end, from + 3600000);
+  assert.equal(bar2.end, to);
 });
 
 test('flowLanes: a ticket that finished inside the window still gets a lane, after the board cards', () => {
@@ -52,6 +56,29 @@ test('flowLanes: a ticket that finished inside the window still gets a lane, aft
   ];
   const lanes = flowLanes(segments, cards, from, to);
   assert.deepEqual(lanes.map((l) => [l.ulid, l.slug]), [['a', 'a-slug'], ['z', 'z-done']]);
+});
+
+test('flowLanes: a touched set keeps only tickets the ledger wrote to inside the window', () => {
+  const from = NOW - 2 * 86400000;
+  const to = NOW;
+  const cards = [{ ulid: 'a', slug: 'a' }, { ulid: 'b', slug: 'b' }];
+  const segments = [
+    // a: sat blocked across the whole window, nothing written — no lane
+    { ticket_ulid: 'a', phase: 'blocked', from: iso(from - 86400000), to: iso(to + 86400000) },
+    // b: same shape but touched — lane, bars clipped to the window
+    { ticket_ulid: 'b', phase: 'building', from: iso(from - 86400000), to: iso(from + 3600000) },
+    { ticket_ulid: 'b', phase: 'checking', from: iso(from + 3600000), to: iso(to + 86400000) },
+    // z: not on the board, touched — lane after the board cards
+    { ticket_ulid: 'z', slug: 'z-done', phase: 'shipping', from: iso(from + 3600000), to: iso(from + 7200000) },
+  ];
+  const lanes = flowLanes(segments, cards, from, to, new Set(['b', 'z']));
+  assert.deepEqual(lanes.map((l) => l.ulid), ['b', 'z']);
+  assert.deepEqual(lanes[0].bars.map((b) => [b.phase, b.x0, b.x1]), [['building', 0, 3600000 / (to - from)], ['checking', 3600000 / (to - from), 1]]);
+  // null is no filter: the old behaviour
+  assert.deepEqual(flowLanes(segments, cards, from, to, null).map((l) => l.ulid), ['a', 'b', 'z']);
+  assert.deepEqual(flowLanes(segments, cards, from, to).map((l) => l.ulid), ['a', 'b', 'z']);
+  // an empty touched set is a filter that keeps nothing
+  assert.deepEqual(flowLanes(segments, cards, from, to, new Set()), []);
 });
 
 test('cadenceDays folds hourly buckets to local days in order', () => {
@@ -101,6 +128,13 @@ test('foldLedger: one dot per event, kind grouped, system on the agent side, slu
   assert.deepEqual(d.map((x) => x.signal), [true, false, true, true, false]);
   assert.equal(kindGroup('review'), 'contract');
   assert.equal(kindGroup('anything-else'), 'transition');
+});
+
+test('foldLedger: an event carrying ticket.slug uses it before slugOf; touchedTickets is the set of ulids', () => {
+  const d = foldLedger([{ ...EV[4], ticket: { slug: 'gamma' } }, EV[0]], slugOf);
+  assert.deepEqual(d.map((x) => x.slug), ['gamma', 'alpha']);
+  assert.deepEqual([...touchedTickets(foldLedger(EV, slugOf))].sort(), ['T1', 'T2', 'T3']);
+  assert.deepEqual([...touchedTickets([])], []);
 });
 
 test('hueBy: kind is the ledger order, actor is the side, ticket hues the busiest and dims the rest', () => {
@@ -170,4 +204,42 @@ test('minuteKey round-trips through rangeFromLocal', () => {
 test('stepWindow moves the window by its own length either way', () => {
   assert.deepEqual(stepWindow(100, 200, 1), { from: 200, to: 300 });
   assert.deepEqual(stepWindow(100, 200, -1), { from: 0, to: 100 });
+});
+
+// ---- the window read ----------------------------------------------------------
+import { TIME_WINDOW_QUERY, MAX_PAGES, windowVars, mergePages, needsRefetch, touchedTickets } from './timeview.js';
+
+test('windowVars: since is from, until is to + 1 ms (half-open server bound, inclusive window), before passes through', () => {
+  const from = Date.parse('2026-09-21T20:17:00Z'), to = Date.parse('2026-09-28T20:17:00.000Z');
+  assert.deepEqual(windowVars(from, to), { since: '2026-09-21T20:17:00.000Z', until: '2026-09-28T20:17:00.001Z', before: null });
+  assert.equal(windowVars(from, to, 4711).before, 4711);
+  assert.ok(TIME_WINDOW_QUERY.includes('events(since: $since, until: $until, before_id: $before, limit: 10000)'));
+  assert.ok(TIME_WINDOW_QUERY.includes('timeline(since: $since, until: $until)'));
+});
+
+test('mergePages: newest first, deduped by id, segments from the first page, truncated only past MAX_PAGES with more left', () => {
+  const page = (ids, next, segs = []) => ({ events: { events: ids.map((id) => ({ id })), next_before_id: next }, timeline: { segments: segs } });
+  const one = mergePages([page([9, 8, 7], null, [{ phase: 'building' }])]);
+  assert.deepEqual(one.events.map((e) => e.id), [9, 8, 7]);
+  assert.deepEqual(one.segments, [{ phase: 'building' }]);
+  assert.equal(one.truncated, false);
+
+  // a page boundary moved under a live append: 7 arrives twice, once
+  const two = mergePages([page([9, 8, 7], 7), page([7, 6, 5], null)]);
+  assert.deepEqual(two.events.map((e) => e.id), [9, 8, 7, 6, 5]);
+  assert.equal(two.truncated, false);
+
+  // MAX_PAGES pages and the last one still points older: truncated
+  const full = Array.from({ length: MAX_PAGES }, (_, i) => page([100 - i], 100 - i));
+  assert.equal(mergePages(full).truncated, true);
+  // MAX_PAGES pages but the last is the end: not truncated
+  full[MAX_PAGES - 1] = page([1], null);
+  assert.equal(mergePages(full).truncated, false);
+  assert.deepEqual(mergePages([page([], null)]), { events: [], segments: [], truncated: false });
+});
+
+test('needsRefetch: a window that ended before the last fetch never refetches; one that reaches it does', () => {
+  assert.equal(needsRefetch(1000, 2000), false);   // window closed before the fetch: append-only, nothing new
+  assert.equal(needsRefetch(3000, 2000), true);    // window runs past the fetch: may have gained events
+  assert.equal(needsRefetch(2000, 2000), true);    // boundary: the fetch could have raced an append at to
 });
