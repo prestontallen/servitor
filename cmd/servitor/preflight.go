@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -28,6 +30,52 @@ func toneInstalled(home string) bool {
 // print order. Agents set them with `servitor set` in the same command as
 // the transition they describe (skills/servitor: Handoff).
 var handoffFields = []string{"branch", "worktree", "head", "pushed", "staging", "checkpoint", "next"}
+
+const defaultBranchTemplate = "agent/<agentname>/<ticket-slug>"
+
+var (
+	placeholderRE = regexp.MustCompile(`<([a-z][a-z0-9-]*)>`)
+	jiraKeyRE     = regexp.MustCompile(`^[A-Z][A-Z0-9]+-[0-9]+$`)
+)
+
+// jiraKey reads the ticket's jira field, a /browse/ link or a bare key,
+// and returns the key. A board or search link fails the PROJ-123 shape.
+func jiraKey(v any) (string, bool) {
+	s, _ := v.(string)
+	s, _, _ = strings.Cut(s, "?")
+	s, _, _ = strings.Cut(s, "#")
+	s = strings.TrimRight(strings.TrimSpace(s), "/")
+	s = s[strings.LastIndex(s, "/")+1:]
+	return s, jiraKeyRE.MatchString(s)
+}
+
+// branchName fills tmpl for the focused ticket. <agentname> and
+// <ticket-slug> always resolve; any other <name> reads the ticket field of
+// that name (<jira> through jiraKey). With no focused ticket those stay
+// placeholders. missing lists the fields that did not resolve.
+func branchName(tmpl, agent, slug string, fields map[string]any, focused bool) (name string, missing []string) {
+	name = placeholderRE.ReplaceAllStringFunc(tmpl, func(m string) string {
+		switch k := m[1 : len(m)-1]; {
+		case k == "agentname":
+			return agent
+		case k == "ticket-slug":
+			return slug
+		case !focused:
+			return m
+		case k == "jira":
+			if key, ok := jiraKey(fields[k]); ok {
+				return key
+			}
+		default:
+			if s, ok := fields[k].(string); ok && s != "" {
+				return s
+			}
+		}
+		missing = append(missing, m[1:len(m)-1])
+		return m
+	})
+	return name, missing
+}
 
 // preflight prints the where-am-I header for the SessionStart hook: cwd,
 // canonical checkout vs linked worktree, branch, distance behind
@@ -93,6 +141,8 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 	}
 
 	slug := "<ticket-slug>"
+	var fields map[string]any
+	focused := false
 	if doc != nil {
 		var f struct {
 			Slug        string         `json:"slug"`
@@ -102,7 +152,7 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 			Fields      map[string]any `json:"fields"`
 		}
 		if json.Unmarshal(doc, &f) == nil && f.Slug != "" {
-			slug = f.Slug
+			slug, fields, focused = f.Slug, f.Fields, true
 			line := fmt.Sprintf("card: %s %s", f.Slug, f.Status)
 			if f.ActiveBy != "" && f.ActiveBy != actor {
 				line += fmt.Sprintf(", active by %s since %s: do not start it", f.ActiveBy, f.ActiveSince)
@@ -117,18 +167,37 @@ func preflight(w io.Writer, dir, actor string, doc []byte) {
 			}
 		}
 	}
-	if canonical {
-		// servitor.branchTemplate is the operator's naming preference; git's
-		// own local-over-global precedence decides which one applies
-		tmpl, _ := git(time.Second, "config", "--get", "servitor.branchTemplate")
-		if tmpl != "" && !strings.Contains(tmpl, "<ticket-slug>") {
-			fmt.Fprintf(w, "servitor.branchTemplate %q has no <ticket-slug>: ignored, using the default\n", tmpl)
-			tmpl = ""
+	// servitor.branchTemplate is the operator's naming preference; git's
+	// own local-over-global precedence decides which one applies
+	tmpl, _ := git(time.Second, "config", "--get", "servitor.branchTemplate")
+	if tmpl != "" && !strings.Contains(tmpl, "<ticket-slug>") {
+		fmt.Fprintf(w, "servitor.branchTemplate %q has no <ticket-slug>: ignored, using the default\n", tmpl)
+		tmpl = ""
+	}
+	if tmpl == "" {
+		tmpl = defaultBranchTemplate
+	}
+	agent := strings.TrimPrefix(actor, "agent:")
+	name, missing := branchName(tmpl, agent, slug, fields, focused)
+	// Jira mode: a branch without the key never links, and renaming a
+	// pushed branch breaks the link Jira already made, so no key, no branch
+	noJira := slices.Contains(missing, "jira")
+	switch {
+	case noJira:
+		if v, ok := fields["jira"]; ok && v != nil && v != "" {
+			fmt.Fprintf(w, "jira field \"%v\" is not a Jira key (want PROJ-123): fix it before the branch\n", v)
+		} else {
+			fmt.Fprintf(w, "no jira key on %s: ask the human for the Jira issue link before the branch\n", slug)
 		}
-		if tmpl == "" {
-			tmpl = "agent/<agentname>/<ticket-slug>"
-		}
-		name := strings.NewReplacer("<agentname>", strings.TrimPrefix(actor, "agent:"), "<ticket-slug>", slug).Replace(tmpl)
+		fmt.Fprintf(w, "  servitor set %s jira=<jira-issue-link>\n", slug)
+	case len(missing) > 0:
+		fmt.Fprintf(w, "servitor.branchTemplate needs field %q, which %s lacks: using the default\n", missing[0], slug)
+		name, _ = branchName(defaultBranchTemplate, agent, slug, fields, focused)
+	case focused && strings.Contains(tmpl, "<jira>"):
+		key, _ := jiraKey(fields["jira"])
+		fmt.Fprintf(w, "jira: %s: commit subjects and the PR title start with it\n", key)
+	}
+	if canonical && !noJira {
 		fmt.Fprintf(w, "  git fetch origin\n  git worktree add -b %s ../%s-worktrees/%s origin/main\n",
 			name, filepath.Base(top), slug)
 		// cd does not move a Claude Code session; the tool does

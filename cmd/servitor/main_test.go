@@ -185,6 +185,7 @@ var (
 // TestPreflight needs no database: a non-git dir degrades to one line, and a
 // fresh repo with no origin reports canonical + unreachable within budget.
 func TestPreflight(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull) // a host Jira template would swap the worktree hint
 	var b bytes.Buffer
 	dir := t.TempDir()
 	preflight(&b, dir, "agent:test", nil)
@@ -255,12 +256,33 @@ func TestPreflightBranchTemplate(t *testing.T) {
 	if err := exec.Command("git", "-C", dir, "init", "-q", "-b", "main").Run(); err != nil {
 		t.Skipf("git unavailable: %v", err)
 	}
-	doc := []byte(`{"slug":"x","status":"queued"}`)
-	for _, c := range []struct{ tmpl, want, warn string }{
-		{"", "worktree add -b agent/test/x ", ""},
-		{"p/<ticket-slug>", "worktree add -b p/x ", ""},
-		{"<agentname>-<ticket-slug>", "worktree add -b test-x ", ""},
-		{"p/fixed", "worktree add -b agent/test/x ", `"p/fixed" has no <ticket-slug>`},
+	ticket := func(fields string) []byte { return []byte(`{"slug":"x","status":"queued","fields":{` + fields + `}}`) }
+	const jiraTmpl = "<jira>-<ticket-slug>"
+	for _, c := range []struct {
+		tmpl string
+		doc  []byte
+		want []string // every one must appear
+		not  []string // none may appear
+	}{
+		{"", ticket(""), []string{"worktree add -b agent/test/x "}, []string{"has no <ticket-slug>", "jira"}},
+		{"p/<ticket-slug>", ticket(""), []string{"worktree add -b p/x "}, nil},
+		{"<agentname>-<ticket-slug>", ticket(""), []string{"worktree add -b test-x "}, nil},
+		{"p/fixed", ticket(""), []string{"worktree add -b agent/test/x ", `"p/fixed" has no <ticket-slug>`}, nil},
+		// any other placeholder reads the ticket field of that name
+		{"<team>/<ticket-slug>", ticket(`"team":"core"`), []string{"worktree add -b core/x "}, nil},
+		{"<team>/<ticket-slug>", ticket(""), []string{`needs field "team"`, "worktree add -b agent/test/x "}, nil},
+		// Jira mode: a /browse/ link or a bare key names the branch and is echoed for commits
+		{jiraTmpl, ticket(`"jira":"https://acme.atlassian.net/browse/PROJ-123?focusedCommentId=9"`),
+			[]string{"worktree add -b PROJ-123-x ", "jira: PROJ-123: commit subjects and the PR title start with it"}, nil},
+		{jiraTmpl, ticket(`"jira":"PROJ-123"`), []string{"worktree add -b PROJ-123-x "}, nil},
+		// no key, or a link that is not an issue: stop, and no branch command
+		{jiraTmpl, ticket(""), []string{"no jira key on x", "servitor set x jira=<jira-issue-link>"}, []string{"worktree add", "EnterWorktree"}},
+		{jiraTmpl, ticket(`"jira":"https://acme.atlassian.net/jira/software/projects/PROJ/boards/1"`),
+			[]string{"is not a Jira key (want PROJ-123)", "servitor set x jira="}, []string{"worktree add", "EnterWorktree"}},
+		{jiraTmpl, ticket(`"jira":"https://acme.atlassian.net/issues/?jql=project%3DPROJ"`),
+			[]string{"is not a Jira key"}, []string{"worktree add"}},
+		// no focused ticket: placeholders stay, the hint still prints
+		{jiraTmpl, nil, []string{"worktree add -b <jira>-<ticket-slug> "}, []string{"no jira key"}},
 	} {
 		args := []string{"-C", dir, "config", "servitor.branchTemplate", c.tmpl}
 		if c.tmpl == "" {
@@ -268,10 +290,17 @@ func TestPreflightBranchTemplate(t *testing.T) {
 		}
 		exec.Command("git", args...).Run() // unset of an unset key exits 5
 		var b bytes.Buffer
-		preflight(&b, dir, "agent:test", doc)
+		preflight(&b, dir, "agent:test", c.doc)
 		out := b.String()
-		if !strings.Contains(out, c.want) || (c.warn != "") != strings.Contains(out, "has no <ticket-slug>") || !strings.Contains(out, c.warn) {
-			t.Errorf("template %q: want %q warn %q in:\n%s", c.tmpl, c.want, c.warn, out)
+		for _, s := range c.want {
+			if !strings.Contains(out, s) {
+				t.Errorf("template %q doc %s: missing %q in:\n%s", c.tmpl, c.doc, s, out)
+			}
+		}
+		for _, s := range c.not {
+			if strings.Contains(out, s) {
+				t.Errorf("template %q doc %s: unexpected %q in:\n%s", c.tmpl, c.doc, s, out)
+			}
 		}
 	}
 }

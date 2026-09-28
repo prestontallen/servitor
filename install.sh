@@ -28,6 +28,10 @@
 #              register) into every detected agent skill directory. Opt-in
 #              here; once linked, the hook announces it and it is mandatory
 #   --no-tone  skip the tone-skill prompt (non-interactive installs)
+#   --branch-template T  set the global git config servitor.branchTemplate
+#              the hook names ticket branches from, e.g. 'p/<ticket-slug>'
+#              or '<jira>-<ticket-slug>' (Jira mode). Interactive installs
+#              with nothing set are asked; the default writes nothing.
 #   --dsn URL  write SERVITOR_DSN into ~/.config/servitor/servitord.env
 #              (mode 0600) and run `servitord apply-schema` against it
 #              before restarting. Never committed to the repo. Interactive
@@ -181,6 +185,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --tone) WANT_TONE=1 ;;
     --no-tone) WANT_TONE=0; TONE_ASKED=1 ;;
+    --branch-template) WANT_BRANCH_TEMPLATE="${2:-}"; BRANCH_ASKED=1; shift ;;
+    --branch-template=*) WANT_BRANCH_TEMPLATE="${1#*=}"; BRANCH_ASKED=1 ;;
     --check) WANT_CHECK=1 ;;
     --reconfigure) WANT_RECONFIGURE=1 ;;
     --from-source) WANT_FROM_SOURCE=1 ;;
@@ -208,6 +214,45 @@ if [ "${WANT_TONE}" -eq 0 ] && [ "${TONE_ASKED:-0}" -eq 0 ] && [ -t 0 ] \
   esac
 fi
 TONE_ASKED=1
+
+choose_branch_template() {
+  # prints the chosen branch template; empty means the servitor default
+  printf 'ticket branch names:\n  1) agent/<agentname>/<ticket-slug>  servitor default\n  2) p/<ticket-slug>\n  3) <jira>-<ticket-slug>  Jira: each ticket needs its Jira link before its branch\n  4) custom\nchoose [1]: ' >&2
+  local answer
+  read -r answer
+  case "${answer}" in
+    2) echo 'p/<ticket-slug>' ;;
+    3) echo '<jira>-<ticket-slug>' ;;
+    4) printf 'template (<agentname>, <ticket-slug>, <jira>, or any ticket field as <name>): ' >&2
+       read -r answer
+       echo "${answer}" ;;
+  esac
+}
+
+set_branch_template() {
+  # set_branch_template T: write T as the global servitor.branchTemplate.
+  # Empty or the default writes nothing; a template without <ticket-slug>
+  # is refused here, since the hook would ignore it anyway.
+  case "$1" in
+    ""|"agent/<agentname>/<ticket-slug>") return 0 ;;
+    *"<ticket-slug>"*) ;;
+    *) echo "branch template '$1' has no <ticket-slug>: not set" >&2; return 0 ;;
+  esac
+  if ! command -v git >/dev/null 2>&1; then
+    echo "git not found: branch template '$1' not set" >&2
+    return 0
+  fi
+  git config --global servitor.branchTemplate "$1"
+  echo "branch template: $1 (git config --global servitor.branchTemplate)"
+}
+
+# ask for a branch template only when interactive, not checking, and none is
+# set yet: an upgrade must not re-ask, and git config is where it is changed
+if [ "${BRANCH_ASKED:-0}" -eq 0 ] && [ "${WANT_CHECK:-0}" -eq 0 ] && [ -t 0 ] \
+  && [ -z "${SERVITOR_INSTALL_LIB:-}" ] && command -v git >/dev/null 2>&1 \
+  && [ -z "$(git config --global --get servitor.branchTemplate || true)" ]; then
+  WANT_BRANCH_TEMPLATE="$(choose_branch_template)"
+fi
 
 link_skill() {
   # link_skill NAME: symlink skills/NAME into every detected agent skill root.
@@ -880,6 +925,7 @@ fi
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
 for s in "${SKILLS[@]}"; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
+set_branch_template "${WANT_BRANCH_TEMPLATE:-}"
 install_hook
 restart
 wait_healthy
