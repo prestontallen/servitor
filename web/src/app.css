@@ -1,148 +1,213 @@
-/* servitor GUI — neutral light/dark base (data-mode) with accent palettes
-   (data-accent). Accents define only accent/status colors; surfaces and
-   text stay neutral in both modes. */
+/* servitor GUI — the cogitator theme. Two modes (data-mode): dark is amber
+   phosphor on black iron; light is burnt-amber ink on parchment. Both share
+   one language: monospace text, a blackletter wordmark, framed panels with
+   captions cut into the border, and red reserved for a card that waits on
+   a human.
+
+   The cogitator names (--ground, --phos, --bone, --blood ...) are the
+   palette; the older names (--bg, --accent, --text, --fail ...) are mapped
+   onto them so every component reads one token set. Card-word and ledger
+   kind hues live here too, so phase-palette can swap tokens only. */
 
 :root,
 :root[data-mode='dark'] {
-  --bg: #141414;
-  --bg-raised: #1d1d1d;
-  --bg-inset: #101010;
-  --line: #2c2c2c;
-  --line-strong: #3d3d3d;
-  --text: #d8d8d4;
-  --text-dim: #8a8a84;
-  --shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  --flash-bg: rgba(255, 255, 255, 0.08);
-  /* ledger kind hues for dot marks; CVD-checked against the dark surface */
-  --k-decision: #4a9ad4;
-  --k-feedback: #e264a8;
-  /* dotlattice package theme hooks, mapped to the GUI palette */
-  --dl-line: var(--line-strong);
-  --dl-accent: var(--accent);
-  --dl-hover: var(--text);
-  --dl-dim: var(--text-dim);
-  --dl-fail: var(--fail);
+  color-scheme: dark;
+  --ground: #07060a;
+  --iron: #100d12;
+  --iron-2: #17131a;
+  --rust: #4a2a24;
+  --rust-2: #6a3a2c;
+  --phos: #f0b24a;
+  --phos-dim: #9b7434;
+  --phos-faint: #4d3b1f;
+  --bone: #d6c7ab;
+  --bone-dim: #7f7563;
+  --blood: #c9261c;
+  --blood-dim: #5d1912;
+  --verdigris: #5ea88c;
+  --glow: rgba(240, 178, 74, 0.45);
+  --glow-soft: rgba(240, 178, 74, 0.12);
+  --scan: rgba(0, 0, 0, 0.18);
+  --vignette: rgba(0, 0, 0, 0.55);
+  --flash-bg: rgba(240, 178, 74, 0.1);
+  --shadow: 0 0 0 6px #0b0910, 0 0 0 7px var(--rust), 0 0 80px var(--glow-soft);
+  --hatch: repeating-linear-gradient(45deg, var(--blood) 0 2px, var(--blood-dim) 2px 4px);
+  /* ledger kind hues */
+  --k-decision: #f0b24a;
+  --k-gate: #ffd98a;
+  --k-feedback: #c9261c;
+  --k-contract: #5ea88c;
+  --k-note: #d6c7ab;
+  --k-transition: #5a4a30;
+  /* six hues for the busiest tickets in the Time view */
+  --t1: #f0b24a;
+  --t2: #5ea88c;
+  --t3: #c9261c;
+  --t4: #d6c7ab;
+  --t5: #8fa3b8;
+  --t6: #a67bd6;
 }
 
 :root[data-mode='light'] {
-  --bg: #f4f4f2;
-  --bg-raised: #ffffff;
-  --bg-inset: #e9e9e6;
-  --line: #d9d9d4;
-  --line-strong: #c2c2bb;
-  --text: #26261f;
-  --text-dim: #6f6f66;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --flash-bg: rgba(0, 0, 0, 0.05);
-  --k-decision: #2f6fb8;
-  --k-feedback: #b8358f;
+  color-scheme: light;
+  --ground: #e6dfcc;
+  --iron: #f4efe2;
+  --iron-2: #ece5d3;
+  --rust: #cbbb9c;
+  --rust-2: #a8946f;
+  --phos: #8a4a12;
+  --phos-dim: #b07a3a;
+  --phos-faint: #e3cfa6;
+  --bone: #2a2218;
+  --bone-dim: #6b5f4d;
+  --blood: #a8231a;
+  --blood-dim: #e6c2bd;
+  --verdigris: #2f7a5e;
+  --glow: rgba(138, 74, 18, 0.25);
+  --glow-soft: rgba(138, 74, 18, 0.06);
+  --scan: transparent;
+  --vignette: transparent;
+  --flash-bg: rgba(138, 74, 18, 0.1);
+  --shadow: 0 0 0 6px #ddd4be, 0 0 0 7px var(--rust-2);
+  --hatch: repeating-linear-gradient(45deg, var(--blood) 0 2px, var(--blood-dim) 2px 4px);
+  --k-decision: #8a4a12;
+  --k-gate: #b07a3a;
+  --k-feedback: #a8231a;
+  --k-contract: #2f7a5e;
+  --k-note: #2a2218;
+  --k-transition: #c2b394;
+  --t1: #8a4a12;
+  --t2: #2f7a5e;
+  --t3: #a8231a;
+  --t4: #2a2218;
+  --t5: #3f5a78;
+  --t6: #6b3fa0;
 }
 
-/* accent: forge (rust) */
-:root,
-:root[data-accent='forge'] {
-  --accent: #c1440e;
-  --accent-dim: #7a2c0c;
-  --ok: #3f8f4a;
-  --warn: #b07818;
-  --fail: #c0392b;
-}
-:root[data-mode='dark'][data-accent='forge'] {
-  --accent: #d95f2b;
-  --accent-dim: #8a3d14;
-  --ok: #57b565;
-  --warn: #d9a441;
-  --fail: #d24a3a;
-}
-
-/* accent: auspex (green) */
-:root[data-accent='auspex'] {
-  --accent: #1d7a3d;
-  --accent-dim: #145c2d;
-  --ok: #1d7a3d;
-  --warn: #b07818;
-  --fail: #c0392b;
-}
-:root[data-mode='dark'][data-accent='auspex'] {
-  --accent: #3fae62;
-  --accent-dim: #1d8f45;
-  --ok: #3fae62;
-  --warn: #d9a441;
-  --fail: #d95c4a;
+/* the older names, mapped: components written against these keep working */
+:root {
+  --bg: var(--ground);
+  --bg-raised: var(--iron);
+  --bg-inset: var(--iron-2);
+  --line: var(--rust);
+  --line-strong: var(--rust-2);
+  --text: var(--bone);
+  --text-dim: var(--bone-dim);
+  --accent: var(--phos);
+  --ok: var(--verdigris);
+  --warn: var(--phos-dim);
+  --fail: var(--blood);
+  /* card words: an ordinal ramp on the phosphor, shipping in verdigris */
+  --w-queued: var(--phos-faint);
+  --w-shaping: var(--bone-dim);
+  --w-building: var(--phos);
+  --w-checking: var(--phos-dim);
+  --w-shipping: var(--verdigris);
+  /* dotlattice package theme hooks */
+  --dl-line: var(--rust-2);
+  --dl-accent: var(--phos);
+  --dl-hover: var(--phos);
+  --dl-dim: var(--bone-dim);
+  --dl-fail: var(--blood);
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --goth: 'Grenze Gotisch', 'IBM Plex Mono', serif;
 }
 
 * { box-sizing: border-box; }
+#app { height: 100%; }
 
 html, body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--ground);
+  color: var(--bone);
+  font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
   -webkit-text-size-adjust: 100%;
 }
-
-h1, h2, h3 {
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text);
+:root[data-mode='dark'] body {
+  background-image: radial-gradient(ellipse at 50% 30%, #14101a 0%, var(--ground) 70%);
 }
 
-a { color: var(--accent); }
+h1, h2, h3 { font-weight: 500; letter-spacing: 0.01em; color: var(--bone); }
+a { color: var(--phos); }
+::selection { background: var(--phos); color: var(--ground); }
 
 button {
   font: inherit;
-  color: var(--text);
+  color: var(--bone-dim);
   background: transparent;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--rust-2);
   padding: 3px 10px;
   cursor: pointer;
-  border-radius: 3px;
-  font-size: 12px;
+  border-radius: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   touch-action: manipulation;
 }
-button:hover { border-color: var(--accent); color: var(--accent); }
-button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg-raised);
-}
+button:hover { border-color: var(--phos); color: var(--phos); }
+button.active { color: var(--phos); border-color: var(--phos); background: var(--glow-soft); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px dashed var(--phos); outline-offset: 2px; }
 
 /* touch: comfortable targets on coarse pointers (iPad/phone) */
 @media (pointer: coarse) {
   button { min-height: 44px; min-width: 44px; padding: 6px 14px; }
 }
 
+select {
+  font: inherit; font-size: 12px; color: var(--bone);
+  background: var(--iron-2); border: 1px solid var(--rust-2);
+  border-radius: 0; padding: 4px 6px;
+}
+
+/* ---- the frame: a bordered panel with its caption cut into the border ---- */
+.frame {
+  position: relative;
+  border: 1px solid var(--rust-2);
+  padding: 14px 12px 10px;
+  background: var(--iron);
+}
+.frame > .cap {
+  position: absolute; top: -8px; left: 10px;
+  background: var(--iron); padding: 0 6px;
+  font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--phos-dim); white-space: nowrap; max-width: calc(100% - 20px);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.frame > .cap.right { left: auto; right: 10px; color: var(--bone-dim); letter-spacing: 0.12em; text-transform: none; max-width: 45%; }
+@media (max-width: 700px) {
+  .frame > .cap.right { display: none; }
+}
+.frame.alarm { border-color: var(--blood-dim); }
+.frame.alarm > .cap { color: var(--blood); }
+.frame.alarm > .cap.right { color: var(--bone-dim); }
+
+/* the old flat panel now reads as a frame without a caption */
+.panel { background: var(--iron); border: 1px solid var(--rust-2); border-radius: 0; }
+
+/* a blackletter heading: the one display moment on a page */
+.goth {
+  font-family: var(--goth); font-weight: 500; font-size: 22px; line-height: 1.1;
+  color: var(--phos); margin: 0; letter-spacing: 0.03em; text-wrap: balance;
+}
+
+/* small uppercase label, the same everywhere */
+.label {
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bone-dim);
+}
+
 .badge {
-  display: inline-block;
-  padding: 0 6px;
-  border: 1px solid var(--line-strong);
-  color: var(--text-dim);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-radius: 3px;
-}
-.badge.blocked_on { border-color: var(--fail); color: var(--fail); }
-.badge.word-shaping { border-color: var(--text-dim); color: var(--text-dim); }
-.badge.word-building { border-color: var(--accent); color: var(--accent); }
-.badge.word-checking { border-color: var(--warn); color: var(--warn); }
-.badge.word-shipping { border-color: var(--ok); color: var(--ok); }
-
-/* flat panel: single border */
-.panel {
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  display: inline-block; padding: 0 6px; border: 1px solid var(--rust-2);
+  color: var(--bone-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
 }
 
-.muted { color: var(--text-dim); }
-.meta-inline { color: var(--text-dim); font-size: 11px; }
-
-.state-pass { color: var(--ok); }
-.state-fail { color: var(--fail); }
+.muted { color: var(--bone-dim); }
+.phos { color: var(--phos); }
+.blood { color: var(--blood); }
+.verd { color: var(--verdigris); }
 
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash {
@@ -150,6 +215,28 @@ button.active {
   100% { background-color: transparent; }
 }
 
+/* ---- CRT chrome: scanlines and a vignette over the whole screen, dark only.
+   The flicker and the prompt cursor only move for viewers who allow motion. */
+.crt-scan, .crt-vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 50;
+}
+.crt-scan {
+  background: repeating-linear-gradient(0deg, var(--scan) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+.crt-vignette { background: radial-gradient(ellipse at center, transparent 60%, var(--vignette) 100%); }
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-mode='dark'] .crt-flicker { animation: flicker 9s infinite steps(1); }
+  @keyframes flicker {
+    0%, 97%, 100% { opacity: 1; }
+    97.5% { opacity: 0.93; }
+    98% { opacity: 1; }
+    98.6% { opacity: 0.96; }
+  }
+  .cursor { animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--rust-2); }
 ::-webkit-scrollbar-track { background: transparent; }

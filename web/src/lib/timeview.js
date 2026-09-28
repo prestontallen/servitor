@@ -129,3 +129,146 @@ export function fmtDur(ms) {
   const dd = Math.floor(h / 24);
   return h % 24 ? `${dd}d ${h % 24}h` : `${dd}d`;
 }
+
+// ---- the ledger itself: /api/events -> dots ---------------------------------
+// The Time view draws the ledger one dot per event. Each event folds to a
+// dot {t, id, kind, group, side, ticket, slug, signal}; `group` is the hue
+// key and is rewritten by hueBy() for the mode the reader picked, `side`
+// is human or agent (system counts as the machine), `signal` is the
+// store's own class so the signals-only toggle agrees with the ledger.
+
+// kind -> hue group. Contract and review are one group (the signed forms);
+// anything the store classes as a transition draws dim.
+export const LEDGER_ORDER = ['decision', 'gate', 'feedback', 'contract', 'note', 'transition'];
+export const LEDGER_COLOR = {
+  decision: 'var(--k-decision)', gate: 'var(--k-gate)', feedback: 'var(--k-feedback)',
+  contract: 'var(--k-contract)', note: 'var(--k-note)', transition: 'var(--k-transition)'
+};
+const KIND_GROUP = { decision: 'decision', gate: 'gate', feedback: 'feedback', contract: 'contract', review: 'contract', note: 'note' };
+export function kindGroup(kind) {
+  return KIND_GROUP[kind] || 'transition';
+}
+
+export const ACTOR_ORDER = ['human', 'agent'];
+export const ACTOR_COLOR = { human: 'var(--phos)', agent: 'var(--phos-dim)' };
+
+// six hues for the busiest tickets, the rest go dim; more than six is noise
+export const TICKET_PALETTE = ['var(--t1)', 'var(--t2)', 'var(--t3)', 'var(--t4)', 'var(--t5)', 'var(--t6)'];
+export const TICKET_OTHER = 'var(--k-transition)';
+export const TICKET_TOP = 6;
+
+// slugOf: ticket ulid -> slug (falls back to the ulid's first eight chars)
+export function foldLedger(events, slugOf = () => null) {
+  return events.map((e) => ({
+    t: t(e.ts), id: e.id, kind: e.kind, group: kindGroup(e.kind),
+    side: e.actor_type === 'human' ? 'human' : 'agent',
+    ticket: e.ticket_ulid, slug: slugOf(e.ticket_ulid) || (e.ticket_ulid || '').slice(0, 8),
+    signal: e.class === 'signal', actor: e.actor, payload: e.payload || {}
+  }));
+}
+
+// the busiest tickets in a set of dots, busiest first: [{ticket, slug, n}]
+export function topTickets(dots, n = TICKET_TOP) {
+  const count = new Map();
+  for (const d of dots) {
+    const c = count.get(d.ticket) || { ticket: d.ticket, slug: d.slug, n: 0 };
+    c.n++;
+    count.set(d.ticket, c);
+  }
+  return [...count.values()].sort((a, b) => b.n - a.n || a.slug.localeCompare(b.slug)).slice(0, n);
+}
+
+// mode: 'kind' | 'actor' | 'ticket'. Returns the lattice's group order +
+// colors and the dots with `group` set for that mode. `top` (ticket mode)
+// is the set the hues are assigned to; pass the window's busiest so the
+// overview strip and the window agree on who is who.
+export function hueBy(dots, mode, top = []) {
+  if (mode === 'actor') {
+    return { groups: ACTOR_ORDER.map((name) => ({ name, color: ACTOR_COLOR[name] })),
+             dots: dots.map((d) => ({ ...d, group: d.side })) };
+  }
+  if (mode === 'ticket') {
+    const hue = new Map(top.map((x, i) => [x.ticket, TICKET_PALETTE[i % TICKET_PALETTE.length]]));
+    const groups = top.map((x, i) => ({ name: x.slug, color: TICKET_PALETTE[i % TICKET_PALETTE.length] }));
+    groups.push({ name: 'other', color: TICKET_OTHER });
+    return { groups, dots: dots.map((d) => ({ ...d, group: hue.has(d.ticket) ? d.slug : 'other' })) };
+  }
+  return { groups: LEDGER_ORDER.map((name) => ({ name, color: LEDGER_COLOR[name] })),
+           dots: dots.map((d) => ({ ...d, group: kindGroup(d.kind) })) };
+}
+
+// the signals-only toggle and the legend filter, as one pass
+export function filterDots(dots, { signalsOnly = false, only = null } = {}) {
+  return dots.filter((d) => (!signalsOnly || d.signal) && (!only || d.group === only));
+}
+
+// what one column holds: counts by group, the tickets in it (busiest
+// first) and the newest event id, which is where the journal opens
+export function columnSummary(dots, t0, t1) {
+  const inCol = dots.filter((d) => d.t >= t0 && d.t < t1);
+  const byGroup = {};
+  let newest = 0;
+  for (const d of inCol) {
+    byGroup[d.group] = (byGroup[d.group] || 0) + 1;
+    if (d.id > newest) newest = d.id;
+  }
+  return { total: inCol.length, byGroup, tickets: topTickets(inCol, 4), newestId: newest || null };
+}
+
+// the column under an x offset, in the lattice's own bucketing: cols of
+// `cell` px across `width`, so the tooltip and the click agree with the
+// dots the lib drew
+export function columnAt(x, width, span, cell = 8) {
+  const cols = Math.max(1, Math.floor(width / cell));
+  const i = Math.min(cols - 1, Math.max(0, Math.floor(x / cell)));
+  const ms = (span.max - span.min) / cols;
+  return { i, t0: span.min + i * ms, t1: span.min + (i + 1) * ms };
+}
+
+// per-day totals from dots, oldest first, for the chain under the overview
+export function dayTotals(dots) {
+  const days = new Map();
+  for (const d of dots) {
+    const key = dayKey(d.t);
+    const row = days.get(key) || { day: key, total: 0, human: 0 };
+    row.total++;
+    if (d.side === 'human') row.human++;
+    days.set(key, row);
+  }
+  return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
+// ---- the range fields ----------------------------------------------------------
+// Two native datetime-local fields set the window to the minute, local
+// time: 'YYYY-MM-DDTHH:MM'. A bare date still works (from at midnight, to
+// at the end of its day). Seconds are not a control here: finer than a
+// minute is more than the ledger needs to be read at. A reversed or empty
+// pair is an error the caller reports and does not navigate on.
+const LOCAL = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/;
+function parseLocal(s, endOfDay) {
+  const m = LOCAL.exec(s || '');
+  if (!m) return NaN;
+  const [, y, mo, d, h, mi] = m;
+  if (h == null) return endOfDay ? new Date(+y, mo - 1, +d + 1).getTime() - 1 : new Date(+y, mo - 1, +d).getTime();
+  return new Date(+y, mo - 1, +d, +h, +mi).getTime();
+}
+export function rangeFromLocal(fromStr, toStr) {
+  if (!fromStr || !toStr) return { error: 'both ends are needed' };
+  const from = parseLocal(fromStr, false), to = parseLocal(toStr, true);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return { error: 'that is not a date' };
+  if (to <= from) return { error: 'the range runs backwards' };
+  return { from, to };
+}
+
+// a timestamp as the field's own format, local time to the minute
+export function minuteKey(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${dayKey(ms)}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// the arrows: step the window by its own length, either way
+export function stepWindow(from, to, dir) {
+  const len = to - from;
+  return { from: from + dir * len, to: to + dir * len };
+}
