@@ -14,6 +14,9 @@
 #   - link_skill refuses to link a skill the tree does not carry, drops a
 #     dangling link left by an earlier install, and leaves a real directory
 #     alone; check_skill_links reports a dangling link as drift
+#   - set_branch_template writes a preset to global git config, writes
+#     nothing for the default, and refuses a template without <ticket-slug>;
+#     --branch-template is parsed and the menu maps choices to presets
 #
 # Method: install.sh is sourced as a library (SERVITOR_INSTALL_LIB=1) with a
 # stub PATH, a fake HOME, and a stub curl that serves a real tarball built
@@ -230,6 +233,26 @@ hasnt "the one real skill is not drift" "${out}" "${ROOT}/servitor is not"
 ln -sfn /nowhere/servitor "${ROOT}/servitor"
 out="$(run "REPO='${TREE}'; check_skill_links" 2>&1)" || true
 has "a wrong target reports as not linked" "${out}" "${ROOT}/servitor is not linked to this checkout"
+
+echo
+echo "== branch template =="
+# the fake HOME's .gitconfig is the global config here, whatever the host set
+export GIT_CONFIG_GLOBAL="${FAKE_HOME}/.gitconfig"
+gcfg() { git config --global --get servitor.branchTemplate || true; }
+run 'set_branch_template ""' >/dev/null
+check "empty writes nothing" "$(gcfg)" ""
+run "set_branch_template 'agent/<agentname>/<ticket-slug>'" >/dev/null
+check "the default writes nothing" "$(gcfg)" ""
+out="$(run "set_branch_template 'p/fixed'" 2>&1)"
+check "a template without <ticket-slug> is not written" "$(gcfg)" ""
+has "and says why" "${out}" "has no <ticket-slug>: not set"
+run "set_branch_template '<jira>-<ticket-slug>'" >/dev/null
+check "the Jira preset lands in global config" "$(gcfg)" "<jira>-<ticket-slug>"
+out="$(PATH="${STUB}:${PATH}" HOME="${FAKE_HOME}" SERVITOR_INSTALL_LIB=1 \
+  bash -c ". '${REPO}/install.sh' --branch-template 'p/<ticket-slug>'; echo \"\${WANT_BRANCH_TEMPLATE}\"")"
+check "--branch-template is parsed" "${out}" "p/<ticket-slug>"
+check "choosing 3 picks the Jira preset" "$(echo 3 | run 'choose_branch_template' 2>/dev/null)" "<jira>-<ticket-slug>"
+check "enter picks the default (empty)" "$(echo | run 'choose_branch_template' 2>/dev/null)" ""
 
 echo
 if [ "${fail}" -eq 0 ]; then

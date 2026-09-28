@@ -40,11 +40,23 @@ on different machines can see.
 The branch name is the one the hook prints in its `git worktree add`
 line: `agent/<agentname>/<ticket-slug>` by default, or the operator's
 `servitor.branchTemplate` git config when set (repo config over global,
-placeholders `<agentname>` and `<ticket-slug>`, e.g.
-`git config --global servitor.branchTemplate 'p/<ticket-slug>'`). A
-template without `<ticket-slug>` is ignored: one branch per ticket is the
-invariant, the rest is style. Record the name in `branch`; every later
-step reads it from there.
+placeholders `<agentname>`, `<ticket-slug>`, and any other `<name>` read
+from the ticket field of that name, e.g.
+`git config --global servitor.branchTemplate 'p/<ticket-slug>'`;
+install.sh offers presets). A template without `<ticket-slug>` is
+ignored: one branch per ticket is the invariant, the rest is style.
+Record the name in `branch`; every later step reads it from there.
+
+**Jira mode** is a template with `<jira>`, e.g. `<jira>-<ticket-slug>`,
+so Jira links the branch, commits and PR to its issue. Three rules:
+
+- No key, no branch. When the hook prints `no jira key`, or says the
+  field is not a Jira key, ask the human for the Jira issue link and
+  `servitor set <ref> jira=<link>` before creating the branch. A pushed
+  branch cannot be renamed without breaking the link Jira already made.
+- Every commit subject starts with the key: `PROJ-123 <slug>: <what>`.
+  Jira links commits only by message.
+- The PR title starts with the key: `PROJ-123 <ticket-slug>: <one-line what>`.
 
 ```bash
 export SERVITOR_ACTOR=agent:<agentname>
