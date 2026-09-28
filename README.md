@@ -37,6 +37,10 @@ files.
 
 ```
 servitor hook [ref]       SessionStart hook: preflight header + ctx; always exits 0
+servitor hook --hermes    the same output as a Hermes pre_llm_call context
+                          injection (first turn only; reads the hook payload
+                          on stdin); install.sh registers it in the Hermes
+                          profile config.yaml
 servitor ctx [ref]        ticket aggregate, JSON only; always exits 0
 servitor board            queued/active/blocked, rank-ordered
 servitor arcs             arcs with derived rollups
