@@ -23,7 +23,7 @@ switch views; the prompt line at the foot takes `board`, `time`, `arcs`,
 
 ![Board](docs/screens/board.png)
 
-**Time** — the ledger, one dot per event, hue by kind, actor or ticket; a column opens the journal, a ✠ opens the dossier.
+**Time** — the ledger, one dot per event, hue by kind, actor or ticket; a column opens the journal, a ✠ mark reveals its gates and opens the dossier; Flow is a phase bar per card the window touched.
 
 ![Time](docs/screens/time.png)
 
