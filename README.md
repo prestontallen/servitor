@@ -13,6 +13,36 @@ deleted; corrections are new events. The store is the system of record.
 The Go layer owns the projection; the schema intentionally has no apply
 trigger. One transaction per `append_event`.
 
+## Screens
+
+The GUI reads the ledger and draws it as a cogitator terminal. Keys 1-4
+switch views; the prompt line at the foot takes `board`, `time`, `arcs`,
+`journal` and `ctx <ref>`.
+
+**Board** — lanes by card word; cards that wait on a human sit in the red rail.
+
+![Board](docs/screens/board.png)
+
+**Time** — the ledger, one dot per event, hue by kind, actor or ticket; a column opens the journal, a ✠ opens the dossier.
+
+![Time](docs/screens/time.png)
+
+**Ticket** — the dossier: gates, contract, criteria, plan, handoff fields, ledger.
+
+![Ticket](docs/screens/ticket.png)
+
+**Arcs** — campaigns of tickets as a tree; what waits on you sits above them.
+
+![Arcs](docs/screens/arcs.png)
+
+**Journal** — the whole ledger, newest first, filtered by kind and actor.
+
+![Journal](docs/screens/journal.png)
+
+**Arc timeline** — one lane per member from the arc's first event to now.
+
+![Arc timeline](docs/screens/timeline.png)
+
 ## Model
 
 - Every ticket and sub-item has a ULID. Sub-items are addressed by prefix.
