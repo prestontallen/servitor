@@ -107,6 +107,11 @@ Key on codes; read messages for detail.
    `finding` subitem per finding, and a review event. On `hold`, fix and
    run again. On `present`: `servitor gate <ref> presented`, present the
    work, then `servitor set <ref> --status done` after human acceptance.
+   When the work crosses two or more participants (services, stores,
+   edges, queues, clients, external APIs), ask the human at presentation
+   whether they want a flow diagram of it. On yes, log a `flow.set`
+   (shape in `references/events.md`); log a new one whenever the picture
+   changes. Never log one unasked.
 4. Blocked: `servitor set <ref> --status blocked --on human` — always say
    on WHOM and why in a note.
 5. Abandoning: `--status dropped`. Never fake done.
