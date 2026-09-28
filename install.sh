@@ -16,8 +16,11 @@
 # links the servitor, servitor-dev, ticket-flow, servitor-plan and servitor-review skills into every
 # detected agent skill directory (Hermes: ~/.hermes/skills, Claude:
 # ~/.claude/skills), so skill edits are live immediately and binary edits
-# take effect after restart. On hosts with Claude Code it also registers
-# the SessionStart hook (`servitor hook`) in ~/.claude/settings.json.
+# take effect after restart. On hosts with Claude Code it registers the
+# SessionStart hook (`servitor hook`) in ~/.claude/settings.json; on hosts
+# with Hermes it registers `servitor hook --hermes` as a pre_llm_call shell
+# hook in the Hermes profile config.yaml, so every new session of either
+# agent starts with the same orientation.
 #
 # Usage: ./install.sh [--check] [--from-source] [--version TAG]
 #                     [--tone|--no-tone] [--dsn URL] [--token TOKEN]
@@ -344,6 +347,119 @@ install_hook() {
   # Claude Code hosts only: every new session starts with `servitor hook`
   [ -d "${HOME}/.claude" ] || return 0
   hook_json install && echo "==> SessionStart hook registered in ${CLAUDE_SETTINGS}"
+}
+
+# Hermes: the hook lives in the profile config.yaml as a pre_llm_call shell
+# hook. `on_session_start` cannot inject (observer), and pre_llm_call is the
+# documented injection point — the payload's is_first_turn gate lives in the
+# `hook --hermes` flag. Consent stays the user's: no hooks_auto_accept here.
+HERMES_CONFIG="${HOME}/.hermes/config.yaml"
+HERMES_PY="${HOME}/.hermes/hermes-agent/venv/bin/python"
+# absolute path on purpose: `hermes hooks doctor` checks the first bare
+# token as a file, and a gateway service may have no PATH entry for bin.
+# The actor is set inside `hook --hermes` (SERVITOR_ACTOR, when unset).
+HERMES_HOOK_CMD="${BIN_DIR}/servitor hook --hermes"
+
+hermes_hook() {
+  # hermes_hook check|install: is the servitor pre_llm_call hook registered
+  # in the Hermes profile config.yaml (exit 0/1)? install adds it, keeping
+  # other keys and hooks; the three sad paths (config missing, unparsable,
+  # hooks not a mapping) refuse with a clear message and change nothing —
+  # Hermes itself refuses to write an unreadable config. Edits go through
+  # the Hermes venv python (pyyaml): macOS system python3 cannot be relied
+  # on to parse YAML. No `hooks:` key in the file means a textual append,
+  # so comments in a hand-edited config survive; any other edit rewrites
+  # the file via yaml.safe_dump and leaves the original at config.yaml.bak.
+  [ -x "${HERMES_PY}" ] || {
+    echo "ERROR: ${HERMES_PY} not found or not executable; cannot edit ${HERMES_CONFIG}"
+    return 1
+  }
+  "${HERMES_PY}" - "$1" "${HERMES_CONFIG}" "${HERMES_HOOK_CMD}" <<'PY'
+import os, sys
+
+mode, path, cmd = sys.argv[1:4]
+
+def refuse(msg):
+    print(f"ERROR: {msg}; not touching {path}", file=sys.stderr)
+    sys.exit(1)
+
+if not os.path.exists(path):
+    if mode == "check":
+        sys.exit(1)
+    refuse(f"{path} does not exist; start hermes once to generate it, then re-run install.sh")
+
+text = open(path).read()
+try:
+    import yaml
+except ImportError:
+    refuse("the Hermes venv python has no pyyaml; reinstall hermes-agent")
+
+try:
+    doc = yaml.safe_load(text) or {}
+except yaml.YAMLError as e:
+    refuse(f"{path} does not parse ({str(e).splitlines()[0]})")
+if not isinstance(doc, dict):
+    refuse(f"{path} is not a YAML mapping")
+
+hooks = doc.get("hooks")
+if hooks is None:
+    hooks = {}
+if not isinstance(hooks, dict):
+    refuse(f"the hooks: key in {path} is not a mapping")
+pre = hooks.get("pre_llm_call")
+if pre is None:
+    pre = []
+if not isinstance(pre, list):
+    refuse(f"hooks.pre_llm_call in {path} is not a list")
+have = any(isinstance(e, dict) and e.get("command") == cmd for e in pre)
+
+if mode == "check":
+    sys.exit(0 if have else 1)
+if have:
+    sys.exit(0)
+
+# upgrade: an older spelling of our own hook line (e.g. the env-prefixed
+# command) gets a textual in-place replace so comments survive
+mine = [l for l in text.splitlines() if "servitor hook --hermes" in l and "command:" in l]
+if len(mine) == 1:
+    open(path, "w").write(text.replace(mine[0], f"    - command: {cmd}"))
+    yaml.safe_load(open(path))
+    sys.exit(0)
+
+entry = {"command": cmd, "timeout": 10}
+if "hooks" not in doc and not text.strip("\n"):
+    # empty/new file: just write the hooks block
+    doc["hooks"] = {"pre_llm_call": [entry]}
+    open(path, "w").write(yaml.safe_dump(doc, sort_keys=False))
+    sys.exit(0)
+if "hooks" not in doc:
+    # no hooks key yet: append it textually so comments survive
+    block = ("hooks:\n"
+             "  pre_llm_call:\n"
+             f"    - command: {cmd}\n"
+             "      timeout: 10\n")
+    sep = "" if (not text or text.endswith("\n")) else "\n"
+    open(path, "a").write(sep + block)
+else:
+    pre.append(entry)
+    doc["hooks"] = hooks
+    open(path + ".bak", "w").write(text)
+    open(path, "w").write(yaml.safe_dump(doc, sort_keys=False))
+    print(f"note: {path} rewritten by the YAML editor; the original is at {path}.bak (comments are not preserved)")
+
+# refuse to have written an unreadable config, like Hermes does
+yaml.safe_load(open(path))
+PY
+}
+
+install_hook_hermes() {
+  # Hermes hosts only. Idempotent; the sad paths refuse (nonzero aborts the
+  # install under set -e, same as the drift check would). Registration and
+  # the consent note stay silent once the hook is already in place.
+  [ -d "${HOME}/.hermes" ] || return 0
+  hermes_hook check && return 0
+  hermes_hook install && echo "==> Hermes pre_llm_call hook registered in ${HERMES_CONFIG}"
+  echo "==> note: Hermes prompts once for hook consent on an interactive session; non-interactive runs (gateway, cron) need --accept-hooks or hooks_auto_accept in config.yaml"
 }
 
 build() {
@@ -875,6 +991,15 @@ check() {
     echo "drift: no SessionStart hook running '${HOOK_CMD}' in ${CLAUDE_SETTINGS} (run install.sh)"
     drift=1
   fi
+  if [ -d "${HOME}/.hermes" ]; then
+    if [ ! -x "${HERMES_PY}" ]; then
+      echo "drift: ${HERMES_PY} not found; cannot check the Hermes hook"
+      drift=1
+    elif ! hermes_hook check; then
+      echo "drift: no Hermes pre_llm_call hook running '${HERMES_HOOK_CMD}' in ${HERMES_CONFIG} (run install.sh)"
+      drift=1
+    fi
+  fi
   if [ -f "${ENV_FILE}" ]; then
     local mode
     mode="$(stat_mode "${ENV_FILE}")"
@@ -927,6 +1052,7 @@ for s in "${SKILLS[@]}"; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 set_branch_template "${WANT_BRANCH_TEMPLATE:-}"
 install_hook
+install_hook_hermes
 restart
 wait_healthy
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"

@@ -3,7 +3,9 @@
 This repo is managed by servitor (worklog/task system, daemon on :8181).
 A SessionStart hook runs `servitor hook` at the start of every Claude
 session: where you are, whether to create a worktree, who holds the
-focused card, then the ticket. Hermes sessions run it by hand.
+focused card, then the ticket. Hermes sessions get the same output
+injected by a pre_llm_call shell hook (`servitor hook --hermes`) that
+install.sh registers in the Hermes profile config.yaml.
 
 1. Read the hook output before planning work. No focus ticket?
    Run `servitor board` — never invent a ticket servitor doesn't know about.

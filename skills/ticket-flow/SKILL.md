@@ -18,7 +18,8 @@ ticket → worktree+branch → commits → push branch → PR → human merges
 ## 0. First five minutes
 
 Every session starts with `servitor hook` output (Claude: the SessionStart
-hook install.sh registers; Hermes: run it yourself). Read it, then check:
+hook install.sh registers; Hermes: the pre_llm_call shell hook, registered
+by install.sh as `servitor hook --hermes`). Read it, then check:
 
 1. `SERVITOR_ACTOR` is `agent:<you>`, not the default `agent:cli`.
 2. Where you are. `canonical checkout` means create a worktree before

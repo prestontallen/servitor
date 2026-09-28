@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -59,9 +60,34 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 	case "hook", "ctx":
 		// SessionStart hook: never block a session. A short HTTP timeout so a
 		// hanging API cannot eat the hook's budget; `hook` adds the preflight
-		// header, `ctx` stays pure JSON for scripts.
+		// header, `ctx` stays pure JSON for scripts. `hook --hermes` wraps the
+		// same output in the Hermes pre_llm_call context-injection shape and
+		// speaks only on the session's first turn (cmd/servitor/hermeshook.go).
+		hermes := false
+		var rest []string
+		for _, a := range args {
+			if a == "--hermes" && cmd == "hook" {
+				hermes = true
+				continue
+			}
+			rest = append(rest, a)
+		}
+		args = rest
+		if hermes && env("SERVITOR_ACTOR") == "" {
+			// the hook runs inside a Hermes session with no servitor env
+			// file sourced; the mode knows its agent. Keeping the command a
+			// bare absolute path (no `env` prefix) lets `hermes hooks
+			// doctor` resolve the first token and survives a gateway whose
+			// PATH lacks the local bin directory.
+			c.Actor = "agent:hermes"
+		}
 		if c.HTTP == nil {
 			c.HTTP = &http.Client{Timeout: 3 * time.Second}
+		}
+		var out io.Writer = stdout
+		var hookBuf bytes.Buffer
+		if hermes {
+			out = &hookBuf
 		}
 		ref := ""
 		if len(args) > 0 {
@@ -79,21 +105,30 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		if cmd == "hook" {
 			dir, _ := os.Getwd()
-			preflight(stdout, dir, c.Actor, doc)
+			preflight(out, dir, c.Actor, env("SERVITOR_AGENT"), doc)
 		}
 		if err != nil {
-			fmt.Fprintf(stdout, "servitor: unavailable (%v)\n", err) // one line, exit 0
-			return 0
-		}
-		if ref == "" {
-			fmt.Fprintf(stdout, "servitor: no focused ticket (set SERVITOR_TICKET). %d open card(s):\n", len(board))
-			for _, c := range board {
-				fmt.Fprintf(stdout, "  [%s] %s (%s)\n", c.Status, c.Slug, c.ULID[:8])
+			fmt.Fprintf(out, "servitor: unavailable (%v)\n", err) // one line, exit 0
+			if hermes {
+				return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
 			}
 			return 0
 		}
-		stdout.Write(doc)
-		fmt.Fprintln(stdout)
+		if ref == "" {
+			fmt.Fprintf(out, "servitor: no focused ticket (set SERVITOR_TICKET). %d open card(s):\n", len(board))
+			for _, c := range board {
+				fmt.Fprintf(out, "  [%s] %s (%s)\n", c.Status, c.Slug, c.ULID[:8])
+			}
+			if hermes {
+				return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
+			}
+			return 0
+		}
+		out.Write(doc)
+		fmt.Fprintln(out)
+		if hermes {
+			return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
+		}
 		return 0
 
 	case "board":
@@ -528,6 +563,9 @@ func usage(w io.Writer) {
 
   hook [ref]       SessionStart hook: preflight header (where am I, who holds
                                    the card) + ctx. ALWAYS exits 0.
+  hook --hermes    the same output wrapped as a Hermes pre_llm_call shell-hook
+                   response ({"context": ...} on the session's first turn;
+                   silent otherwise). Reads the hook payload on stdin.
   ctx [ref]        whole ticket aggregate, JSON only. ALWAYS exits 0.
   board            queued/active/blocked cards
   list [--status S]... [--query Q] [--limit N]
@@ -547,6 +585,7 @@ func usage(w io.Writer) {
   history <ref>                    full event timeline
 
 env: SERVITOR_API (default http://localhost:8181), SERVITOR_ACTOR (default agent:cli),
+     SERVITOR_AGENT (hint wording override; the actor name otherwise),
      SERVITOR_HUMAN (your human id, for gates), SERVITOR_TICKET (hook focus)
 `)
 }

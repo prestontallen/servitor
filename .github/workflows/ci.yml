@@ -27,3 +27,4 @@ jobs:
       # the service manager and HOME, so they run anywhere
       - run: ./tests/install-release.sh
       - run: ./tests/install-darwin.sh
+      - run: ./tests/install-hermes.sh
