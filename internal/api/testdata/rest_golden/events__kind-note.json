@@ -1,0 +1,17 @@
+[
+  {
+    "id": 11,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "note",
+    "class": "signal",
+    "payload": {
+      "v": "a note"
+    }
+  }
+]
+

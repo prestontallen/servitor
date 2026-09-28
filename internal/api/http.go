@@ -27,6 +27,10 @@ type HTTP struct {
 	// "Authorization: Bearer <token>". Localhost (CLI/hook/GUI on the host)
 	// is always allowed. Empty = no auth (dev only).
 	Token string
+	// GraphQL, when set, is served at POST /api/graphql under the same
+	// auth guard. It lives in internal/api/graphql, which imports this
+	// package, so the daemon hands it in rather than Routes building it.
+	GraphQL http.Handler
 }
 
 func NewHTTP(s Service) *HTTP { return &HTTP{Service: s} }
@@ -86,6 +90,9 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/events/stream", h.stream)
 	mux.HandleFunc("GET /api/feedback", h.feedback)
 	mux.HandleFunc("GET /api/timeline", h.timeline)
+	if h.GraphQL != nil {
+		mux.Handle("POST /api/graphql", h.GraphQL)
+	}
 	mux.Handle("/", h.static())
 	return h.authed(mux)
 }

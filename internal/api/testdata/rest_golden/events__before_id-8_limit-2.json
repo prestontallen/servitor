@@ -1,0 +1,32 @@
+[
+  {
+    "id": 7,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J00000000000000000A1FA01",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "status.set",
+    "class": "transition",
+    "payload": {
+      "status": "active"
+    }
+  },
+  {
+    "id": 6,
+    "ulid": "<ulid>",
+    "ticket_ulid": "01J000000000000000000BETA1",
+    "ts": "<ts>",
+    "actor": "agent:test",
+    "actor_type": "agent",
+    "session": "",
+    "kind": "field.set",
+    "class": "transition",
+    "payload": {
+      "field": "parent",
+      "v": "01J0000000000000000000ARC1"
+    }
+  }
+]
+

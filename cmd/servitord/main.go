@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prestontallen/servitor/internal/api"
+	"github.com/prestontallen/servitor/internal/api/graphql"
 	"github.com/prestontallen/servitor/internal/store"
 )
 
@@ -87,6 +88,7 @@ func main() {
 
 	svc := api.NewStoreService(s)
 	h := api.NewHTTP(svc)
+	h.GraphQL = graphql.NewHandler(svc)
 	if tok := os.Getenv("SERVITOR_TOKEN"); tok != "" {
 		h.Token = tok
 		log.Printf("auth enabled (bearer token)")

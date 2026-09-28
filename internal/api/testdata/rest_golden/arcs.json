@@ -1,0 +1,30 @@
+[
+  {
+    "ulid": "01J0000000000000000000ARC1",
+    "slug": "fx-arc",
+    "title": "Fixture arc",
+    "status": "queued",
+    "card_word": null,
+    "rollup": "blocked",
+    "last_activity": "<ts>",
+    "members": [
+      {
+        "ulid": "01J00000000000000000A1FA01",
+        "slug": "fx-alpha",
+        "title": "Alpha",
+        "status": "active",
+        "updated_at": "<ts>",
+        "blocked_since": null
+      },
+      {
+        "ulid": "01J000000000000000000BETA1",
+        "slug": "fx-beta",
+        "title": "Beta",
+        "status": "blocked",
+        "updated_at": "<ts>",
+        "blocked_since": "<ts>"
+      }
+    ]
+  }
+]
+
