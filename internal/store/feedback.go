@@ -14,7 +14,7 @@ type FeedbackFilter struct {
 
 // Feedback lists feedback-kind events across all tickets, newest first.
 // Backed by a direct ledger scan on kind. Measure before adding a
-// projection/index (same policy as Analytics).
+// projection/index (same policy as Timeline).
 func (s *Store) Feedback(ctx context.Context, f FeedbackFilter) ([]LedgerEvent, error) {
 	if f.Limit <= 0 || f.Limit > 10000 {
 		f.Limit = 1000

@@ -85,8 +85,6 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("POST /api/events", h.append)
 	mux.HandleFunc("GET /api/events/stream", h.stream)
 	mux.HandleFunc("GET /api/feedback", h.feedback)
-	mux.HandleFunc("GET /api/analytics", h.analytics)
-	mux.HandleFunc("GET /api/analytics/handoffs", h.handoffs)
 	mux.HandleFunc("GET /api/timeline", h.timeline)
 	mux.Handle("/", h.static())
 	return h.authed(mux)
@@ -139,22 +137,6 @@ func (h *HTTP) feedback(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(evs)
 }
 
-func (h *HTTP) analytics(w http.ResponseWriter, r *http.Request) {
-	days := 30
-	if d := r.URL.Query().Get("days"); d != "" {
-		if n, err := strconv.Atoi(d); err == nil {
-			days = n
-		}
-	}
-	buckets, err := h.Service.Analytics(r.Context(), days)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(buckets)
-}
-
 // timeline: /api/timeline?days=N or ?since=&until= (RFC3339 or a bare
 // date). Bad timestamps and bad days are a 422, never silently ignored.
 func (h *HTTP) timeline(w http.ResponseWriter, r *http.Request) {
@@ -197,17 +179,6 @@ func parseWhen(r *http.Request, name string) (*time.Time, error) {
 		}
 	}
 	return nil, &APIError{Code: "invalid_payload", Message: name + " must be RFC3339 or YYYY-MM-DD"}
-}
-
-// handoffs serves per-ticket human/agent round-trip latency.
-func (h *HTTP) handoffs(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.Service.Handoffs(r.Context())
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
 }
 
 func writeErr(w http.ResponseWriter, err error) {

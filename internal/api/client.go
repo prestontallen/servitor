@@ -227,14 +227,6 @@ func (c *HTTPClient) Subscribe(ctx context.Context) (Subscription, error) {
 	return Subscription{Changes: ch, Cancel: func() {}}, nil
 }
 
-func (c *HTTPClient) Analytics(ctx context.Context, days int) ([]DayBucket, error) {
-	var out []DayBucket
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/analytics?days=%d", days), nil, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // Timeline fetches /api/timeline. days rides along unless since is
 // set (until derives from days when only it is given).
 func (c *HTTPClient) Timeline(ctx context.Context, q TimelineQuery) (Timeline, error) {
@@ -250,14 +242,6 @@ func (c *HTTPClient) Timeline(ctx context.Context, q TimelineQuery) (Timeline, e
 	var out Timeline
 	if err := c.do(ctx, http.MethodGet, "/api/timeline?"+v.Encode(), nil, &out); err != nil {
 		return Timeline{}, err
-	}
-	return out, nil
-}
-
-func (c *HTTPClient) Handoffs(ctx context.Context) ([]store.HandoffRow, error) {
-	var out []store.HandoffRow
-	if err := c.do(ctx, http.MethodGet, "/api/analytics/handoffs", nil, &out); err != nil {
-		return nil, err
 	}
 	return out, nil
 }

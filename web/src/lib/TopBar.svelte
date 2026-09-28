@@ -14,7 +14,6 @@
     <button class:active={view.name === 'board'} onclick={() => show('board')}>Board</button>
     <button class:active={view.name === 'time'} onclick={() => show('time')}>Time</button>
     <button class:active={view.name === 'journal'} onclick={() => show('journal')}>Journal</button>
-    <button class:active={view.name === 'analytics'} onclick={() => show('analytics')}>Activity</button>
   </nav>
   <div class="spacer"></div>
   <span class="conn" class:down={live.status === 'down'} title="SSE change stream">
