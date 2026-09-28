@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -31,6 +32,8 @@ type HTTP struct {
 	// auth guard. It lives in internal/api/graphql, which imports this
 	// package, so the daemon hands it in rather than Routes building it.
 	GraphQL http.Handler
+	// Heartbeat is the SSE idle ping cadence; zero means DefaultHeartbeat.
+	Heartbeat time.Duration
 }
 
 func NewHTTP(s Service) *HTTP { return &HTTP{Service: s} }
@@ -344,8 +347,18 @@ func (h *HTTP) append(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
+// DefaultHeartbeat is the idle ping cadence on the SSE stream when
+// HTTP.Heartbeat is zero.
+const DefaultHeartbeat = 15 * time.Second
+
 // stream is SSE: one event per change notification. Consumers treat the
 // last event_id as their watermark and resync via /api/ticket/{ref}/history.
+//
+// The first bytes after the headers are always a `hello` event carrying
+// the current watermark, and a `ping` event follows every Heartbeat while
+// idle. Headers alone are not a connection: browsers and proxies have
+// held a bodiless stream in "connecting" indefinitely, and an idle one
+// gets reaped by anything with a read timeout. Bytes are the signal.
 func (h *HTTP) stream(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
@@ -358,14 +371,29 @@ func (h *HTTP) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer sub.Cancel()
+	head := int64(0)
+	if evs, err := h.Service.Events(r.Context(), store.LedgerFilter{Limit: 1}); err == nil && len(evs) > 0 {
+		head = evs[0].ID
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "event: hello\ndata: {\"event_id\":%d}\n\n", head)
 	fl.Flush()
+	beat := h.Heartbeat
+	if beat <= 0 {
+		beat = DefaultHeartbeat
+	}
+	tick := time.NewTicker(beat)
+	defer tick.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-tick.C:
+			w.Write([]byte("event: ping\ndata: {}\n\n"))
+			fl.Flush()
 		case c, ok := <-sub.Changes:
 			if !ok {
 				// notify connection lost: tell the client to resync, then end.
