@@ -334,3 +334,35 @@ func TestPreflightRegisterLine(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIAddPrintsSubitemULID(t *testing.T) {
+	st := apiTestStore(t)
+	svc := api.NewStoreService(st)
+	ctx := context.Background()
+	id := store.NewULID()
+	if _, err := svc.Append(ctx, api.WriteCmd{
+		Ticket: id, Kind: "ticket.create", Actor: "agent:test",
+		Payload: map[string]any{"slug": "cli-add", "title": "CLI add"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, code := cli(t, svc, nil, "add", "cli-add", "finding", "src=self x.go:L1: check: none. Add one.")
+	if code != 0 {
+		t.Fatalf("add exited %d: %s", code, out)
+	}
+	sub := strings.TrimSpace(out)
+	if !store.IsULID(sub) {
+		t.Fatalf("add printed %q, want a subitem ULID", sub)
+	}
+	// the printed handle closes the finding by prefix
+	if out, code := cli(t, svc, nil, "subitem", "cli-add", sub[:12], "--state", "applied"); code != 0 {
+		t.Fatalf("subitem by printed prefix exited %d: %s", code, out)
+	}
+	var state string
+	if err := st.Pool.QueryRow(ctx, `SELECT state FROM subitems WHERE ulid=$1`, sub).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "applied" {
+		t.Errorf("finding state %q, want applied", state)
+	}
+}

@@ -27,7 +27,7 @@ func tools() []tool {
 	return []tool{
 		{
 			Name:        "servitor_ctx",
-			Description: "Read the whole ticket aggregate (status, gates, criteria, plan, decisions, notes, questions, links) by ticket ULID or slug.",
+			Description: "Read the whole ticket aggregate (status, gates, criteria, plan, decisions, notes, questions, findings, links) by ticket ULID or slug.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -55,7 +55,7 @@ func tools() []tool {
 		},
 		{
 			Name:        "servitor_append",
-			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), flow.set (a diagram of the work, not the ticket: nodes:[{id,label,kind?}] with kind edge|service|store|queue|client|external|other, edges:[{from,to,label?,both?}] where label names what moves and both:true is a round trip — a whole-graph snapshot; each one is a new version and the ticket GUI renders the latest), subitem.add (kind,body,rank), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
+			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), flow.set (a diagram of the work, not the ticket: nodes:[{id,label,kind?}] with kind edge|service|store|queue|client|external|other, edges:[{from,to,label?,both?}] where label names what moves and both:true is a round trip — a whole-graph snapshot; each one is a new version and the ticket GUI renders the latest), subitem.add (kind,body,rank; ulid optional — minted when absent and returned as subitem_ulid, the handle subitem.set takes), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {

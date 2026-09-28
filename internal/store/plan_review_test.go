@@ -138,3 +138,51 @@ func TestBoardPlanMark(t *testing.T) {
 		t.Fatalf("List after board columns: %v", err)
 	}
 }
+
+func TestCtxReadFindings(t *testing.T) {
+	s := testDB(t)
+	ctx := context.Background()
+	id := newTicket(t, s, "pr-findings")
+	empty, err := s.CtxRead(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var none struct {
+		Findings []any `json:"findings"`
+	}
+	if err := json.Unmarshal(empty, &none); err != nil || none.Findings == nil || len(none.Findings) != 0 {
+		t.Fatalf("no findings must read as [], got %s (%v)", empty, err)
+	}
+
+	first := addSubitem(t, s, id, "finding", "src=self a.go:L1: check: none. Add one.")
+	second := addSubitem(t, s, id, "finding", "src=self b.go:L2: shrink: dup. Drop it.")
+	addSubitem(t, s, id, "criterion", "when X then Y") // not a finding
+	mustAppend(t, s, evt(id, "subitem.set", map[string]any{"ulid": first[:12], "state": "applied"}))
+
+	raw, err := s.CtxRead(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Findings []struct {
+			ULID  string  `json:"ulid"`
+			Body  string  `json:"body"`
+			State *string `json:"state"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Findings) != 2 {
+		t.Fatalf("findings: %+v", doc.Findings)
+	}
+	if doc.Findings[0].ULID != first || doc.Findings[1].ULID != second {
+		t.Errorf("order: got %s, %s; want created order %s, %s", doc.Findings[0].ULID, doc.Findings[1].ULID, first, second)
+	}
+	if doc.Findings[0].State == nil || *doc.Findings[0].State != "applied" {
+		t.Errorf("closed finding state: %v", doc.Findings[0].State)
+	}
+	if doc.Findings[1].State != nil {
+		t.Errorf("open finding state must be null, got %q", *doc.Findings[1].State)
+	}
+}

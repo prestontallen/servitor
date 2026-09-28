@@ -74,7 +74,9 @@ servitor log <ref> review '{"verdict":"present|hold","summary":"N/M pass, K unve
 
 Then one line per write in the reply, and the verdict. `present` means the
 presented gate may be requested. `hold` means fix and run again. Findings
-are subitems so each is closed by identity:
+are subitems so each is closed by identity: `servitor add` prints the
+finding's ULID, and `servitor ctx <ref>` lists every finding under
+`findings` with its state.
 `servitor subitem <ref> <finding-prefix> --state applied|rejected|escalated`.
 
 ## Null result

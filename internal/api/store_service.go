@@ -121,6 +121,23 @@ func (ss *StoreService) Append(ctx context.Context, cmd WriteCmd) (AppendResult,
 		}
 		cmd.Ticket = store.NewULID()
 	}
+	// subitem.add mints the subitem ULID into the payload when absent, as
+	// ticket.create does for tickets: the ledger then names the row it
+	// created, and the result hands the caller its handle. The payload is
+	// copied so the caller's map is never written.
+	var sub string
+	if cmd.Kind == "subitem.add" {
+		p := make(map[string]any, len(cmd.Payload)+1)
+		for k, v := range cmd.Payload {
+			p[k] = v
+		}
+		sub, _ = p["ulid"].(string)
+		if sub == "" {
+			sub = store.NewULID()
+			p["ulid"] = sub
+		}
+		cmd.Payload = p
+	}
 	// feedback is a structured kind: it must carry a finding. Other
 	// unknown kinds remain ledger-only, verbatim (store invariant 4).
 	if cmd.Kind == "feedback" {
@@ -153,7 +170,7 @@ func (ss *StoreService) Append(ctx context.Context, cmd WriteCmd) (AppendResult,
 	if err != nil {
 		return AppendResult{}, wrapUnreachable(err)
 	}
-	return AppendResult{EventID: eventID, TicketULID: ticket, Updated: updated}, nil
+	return AppendResult{EventID: eventID, TicketULID: ticket, Updated: updated, SubitemULID: sub}, nil
 }
 
 // Subscribe uses a dedicated connection on NOTIFY as the fast path.

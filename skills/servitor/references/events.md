@@ -58,6 +58,13 @@ servitor add <ref> finding "src=octocat https://github.com/o/r/pull/9#discussion
 servitor subitem <ref> <finding-prefix> --state applied
 ```
 
+- `servitor add` prints the new subitem's ULID; that is the prefix to
+  close it by. The write path mints it into the `subitem.add` payload when
+  the caller does not supply one, and returns it as `subitem_ulid` on the
+  append result (CLI, MCP and HTTP alike). The event id is not the handle.
+- `servitor ctx` lists them as `findings: [{ulid, body, state}]`, in rank
+  then created order.
+
 - Body grammar: `src=<self|reviewer handle> [<comment url>] <loc>: <tag>
   <what>. <fix>.` The source and URL ride in the body for now; `servitor
   add` cannot set fields. Ceiling: when a view needs to filter findings by
