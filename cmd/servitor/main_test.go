@@ -247,6 +247,35 @@ func TestPreflight(t *testing.T) {
 	}
 }
 
+// servitor.branchTemplate names the branch in the worktree hint; unset or
+// missing <ticket-slug> falls back to agent/<agentname>/<ticket-slug>.
+func TestPreflightBranchTemplate(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull) // the host's own preference must not leak in
+	dir := t.TempDir()
+	if err := exec.Command("git", "-C", dir, "init", "-q", "-b", "main").Run(); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	doc := []byte(`{"slug":"x","status":"queued"}`)
+	for _, c := range []struct{ tmpl, want, warn string }{
+		{"", "worktree add -b agent/test/x ", ""},
+		{"p/<ticket-slug>", "worktree add -b p/x ", ""},
+		{"<agentname>-<ticket-slug>", "worktree add -b test-x ", ""},
+		{"p/fixed", "worktree add -b agent/test/x ", `"p/fixed" has no <ticket-slug>`},
+	} {
+		args := []string{"-C", dir, "config", "servitor.branchTemplate", c.tmpl}
+		if c.tmpl == "" {
+			args = []string{"-C", dir, "config", "--unset-all", "servitor.branchTemplate"}
+		}
+		exec.Command("git", args...).Run() // unset of an unset key exits 5
+		var b bytes.Buffer
+		preflight(&b, dir, "agent:test", doc)
+		out := b.String()
+		if !strings.Contains(out, c.want) || (c.warn != "") != strings.Contains(out, "has no <ticket-slug>") || !strings.Contains(out, c.warn) {
+			t.Errorf("template %q: want %q warn %q in:\n%s", c.tmpl, c.want, c.warn, out)
+		}
+	}
+}
+
 // the tone skill linked in any agent skill root turns the register line on,
 // and it is the first line so it cannot be missed
 func TestPreflightRegisterLine(t *testing.T) {
