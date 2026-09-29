@@ -162,9 +162,17 @@ func TestSSEStreamDeliversChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// the hello frame arrives first (sse-hello), so read until the change
+	// frame shows or the request deadline ends the body
+	var out string
 	buf := make([]byte, 1024)
-	n, _ := resp.Body.Read(buf)
-	out := string(buf[:n])
+	for !strings.Contains(out, `"kind":"status.set"`) {
+		n, err := resp.Body.Read(buf)
+		out += string(buf[:n])
+		if err != nil {
+			break
+		}
+	}
 	if !strings.Contains(out, `"kind":"status.set"`) {
 		t.Errorf("SSE payload missing change: %q", out)
 	}
