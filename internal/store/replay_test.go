@@ -19,7 +19,7 @@ func mixedHistory(t *testing.T, s *Store) (string, string) {
 	t.Helper()
 	ctx := context.Background()
 	a := NewULID()
-	mustAppend(t, s, evt(a, "ticket.create", map[string]any{"slug": "rp-a", "title": "A", "rank": 3}))
+	mustAppend(t, s, evt(a, "ticket.create", map[string]any{"slug": "rp-a", "title": "A", "rank": 3, "tier": 1}))
 	mustAppend(t, s, evt(a, "note", map[string]any{"v": "Intake: tier 1"}))
 	mustAppend(t, s, evt(a, "subitem.add", map[string]any{"kind": "criterion", "body": "when x then y"}))
 	mustAppend(t, s, evt(a, "subitem.add", map[string]any{"kind": "criterion", "body": "when p then q", "rank": 2}))

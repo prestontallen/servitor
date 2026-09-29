@@ -38,6 +38,7 @@ func TestParentAndArcRollup(t *testing.T) {
 	}
 
 	// kid active -> rollup active
+	setTier(t, s, kidA, 1)
 	mustAppend(t, s, evt(kidA, "status.set", map[string]any{"status": "active"}))
 	if a := mustArc(t, s, arc); a.Rollup != "active" {
 		t.Fatalf("want active, got %s", a.Rollup)
@@ -152,6 +153,7 @@ func TestHistoryCarriesClass(t *testing.T) {
 	s := testDB(t)
 	tk := newTicket(t, s, "class-ticket")
 	mustAppend(t, s, evt(tk, "note", map[string]any{"v": "a signal"}))
+	setTier(t, s, tk, 1)
 	mustAppend(t, s, evt(tk, "status.set", map[string]any{"status": "active"}))
 
 	evs, err := s.History(context.Background(), tk, 100)
@@ -180,6 +182,7 @@ func TestGlobalEventsFiltered(t *testing.T) {
 	a := newTicket(t, s, "evt-a")
 	b := newTicket(t, s, "evt-b")
 	mustAppend(t, s, evt(a, "note", map[string]any{"v": "note on a"}))
+	setTier(t, s, b, 1)
 	mustAppend(t, s, evt(b, "status.set", map[string]any{"status": "active"}))
 	mustAppend(t, s, evt(a, "note", map[string]any{"v": "second note on a"}))
 

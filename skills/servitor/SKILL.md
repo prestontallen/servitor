@@ -91,8 +91,13 @@ record and not a convention parsed out of a note.
 write path; `ticket.create` generates the ticket ULID server-side. Domain
 violations surface as tool errors with stable codes:
 `stale_write`, `slug_claimed`, `blocked_requires_on`, `human_gate_required`,
-`gate_already_passed`, `ambiguous_prefix`, `unknown_ticket`, `no_live_slug`.
-Key on codes; read messages for detail.
+`gate_already_passed`, `ambiguous_prefix`, `unknown_ticket`, `no_live_slug`,
+and the three rules of the live write path: `tier_required` (active, or a
+recorded commit, on a ticket with no `tier` 0..3), `contract_required` (a
+commit recorded on a tier 2+ ticket before `contract_approved`),
+`criteria_incomplete` (done while a criterion is not `pass`; a human may
+`--waive "<why>"`, an agent gets `human_waiver_required`). Key on codes;
+read messages for detail.
 
 ## Workflow
 
@@ -159,7 +164,13 @@ card must say where you are.
 
 ## Process
 
-Classify at intake and say so; log one intake note with the rating.
+Classify at intake and say so: set the tier as a field in the same command
+as the intake note, because the store reads it and refuses `active` and
+`head` without it (`tier_required`):
+
+```
+servitor set <ref> tier=2 && servitor log <ref> note "Intake: tier 2, complexity medium. ..."
+```
 
 - **Tier** decides how much process applies: 0 trivial (one obvious edit),
   1 small (local change), 2 feature (multi-file / user-visible surface),
@@ -178,8 +189,15 @@ words: present what will exist when the work is done —
 what we build, what we explicitly won't, how we'll prove it — per
 [references/contract.md](references/contract.md), then request the
 `contract_approved` gate. **Do not write implementation code before the
-gate passes** (tier 2+). Tier 0 skips the gate; the one-line done-when
-goes in the intake note.
+gate passes** (tier 2+); the store refuses to record a commit (`head`) on
+a tier 2+ ticket before it (`contract_required`). Tier 0 skips the gate;
+the one-line done-when goes in the intake note.
+
+**Done** needs every criterion in state `pass`; the store refuses it
+otherwise (`criteria_incomplete`). When the human accepts the work with a
+criterion failing or unverified, the human waives it, and the reason rides
+on the status row: `SERVITOR_ACTOR=human:<name> servitor set <ref> --status
+done --waive "<why>"`. An agent cannot waive (`human_waiver_required`).
 
 **Note-worthiness** — log an event when it changes the record, not to
 narrate:

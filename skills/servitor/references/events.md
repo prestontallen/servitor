@@ -135,6 +135,28 @@ servitor log <ref> flow.set '{
   new one when the picture changes, never a partial.
 - A payload that fails validation renders as `flow unparsable: <why>`.
 
+## status.set done with a waive
+
+The store refuses `done` while any criterion is not `pass`
+(`criteria_incomplete`). A human may waive, and the reason rides on the
+same row so history and the dossier show who accepted what:
+
+```
+SERVITOR_ACTOR=human:preston servitor set <ref> --status done --waive "accepted the local proof; CI never saw a skip"
+```
+
+- `waive` is a non-empty string; empty is `criteria_incomplete`.
+- The actor must be `human:`; an agent's waive is `human_waiver_required`.
+- With zero criteria, or all `pass`, `done` needs no waive and carries none.
+
+## tier (ticket field)
+
+`tier` is a JSON integer 0..3 in the ticket's fields, set at intake
+(`servitor set <ref> tier=2`) or in the `ticket.create` payload. The store
+reads it: `active` and a recorded `head` need it (`tier_required`), and a
+`head` on tier 2 or 3 needs `contract_approved` first (`contract_required`).
+A string `"2"` does not count.
+
 ## What the GUI reserves
 
 - Ticket page: Contract and Plan sections always render. An empty one shows

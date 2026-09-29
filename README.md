@@ -54,6 +54,13 @@ switch views; the prompt line at the foot takes `board`, `time`, `arcs`,
   derives from the latest gate — never set by hand.
 - Events carry one actor of record: `human:`, `agent:`, or `system`.
   Judgment events carry human actors; the store enforces it.
+- Three rules of the live write path, each a stable error code: a ticket
+  goes `active` (or records a commit) only with a `tier` 0..3
+  (`tier_required`); a tier 2+ ticket records a commit only after
+  `contract_approved` (`contract_required`); `done` needs every criterion
+  `pass`, or a human's `--waive "<why>"` on the status row
+  (`criteria_incomplete`, `human_waiver_required`). Replay does not
+  re-adjudicate: history written before a rule still rebuilds.
 - Arcs group tickets: an arc is any ticket another points at via
   `parent=<arc-ulid>`. Rollup status, member count and last activity are
   derived, never set by hand.

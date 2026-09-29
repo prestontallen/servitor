@@ -14,7 +14,7 @@ func tlEvents(t *testing.T, s Service, ulid, slug string) time.Time {
 	t.Helper()
 	ctx := context.Background()
 	steps := []WriteCmd{
-		{Ticket: ulid, Kind: "ticket.create", Actor: "agent:test", Payload: map[string]any{"slug": slug, "title": "T"}},
+		{Ticket: ulid, Kind: "ticket.create", Actor: "agent:test", Payload: map[string]any{"slug": slug, "title": "T", "tier": 1}},
 		{Ticket: ulid, Kind: "status.set", Actor: "agent:test", Payload: map[string]any{"status": "active"}},
 		{Ticket: ulid, Kind: "gate", Actor: "human:preston", Payload: map[string]any{"gate": "contract_approved"}},
 		{Ticket: ulid, Kind: "status.set", Actor: "agent:test", Payload: map[string]any{"status": "blocked", "on": "human"}},
@@ -118,7 +118,7 @@ func TestTimelineGateWhileQueued(t *testing.T) {
 	ctx := context.Background()
 	id := store.NewULID()
 	steps := []WriteCmd{
-		{Ticket: id, Kind: "ticket.create", Actor: "agent:test", Payload: map[string]any{"slug": "timeline-queued-gate", "title": "Q"}},
+		{Ticket: id, Kind: "ticket.create", Actor: "agent:test", Payload: map[string]any{"slug": "timeline-queued-gate", "title": "Q", "tier": 1}},
 		{Ticket: id, Kind: "gate", Actor: "human:preston", Payload: map[string]any{"gate": "contract_approved"}},
 		{Ticket: id, Kind: "status.set", Actor: "agent:test", Payload: map[string]any{"status": "active"}},
 	}

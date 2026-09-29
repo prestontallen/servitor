@@ -109,8 +109,9 @@ func TestCLISetAndGateThroughHTTP(t *testing.T) {
 	}
 	env := map[string]string{"SERVITOR_HUMAN": "preston"}
 
-	// set priority=high --status active
-	out, code := cli(t, svc, env, "set", "cli-e2e", "priority=high", "--status", "active")
+	// set priority=high --status active tier=1: the field after the status
+	// still lands first, or the store would answer tier_required
+	out, code := cli(t, svc, env, "set", "cli-e2e", "priority=high", "--status", "active", "tier=1")
 	if code != 0 {
 		t.Fatalf("set exited %d: %s", code, out)
 	}

@@ -384,7 +384,10 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			return 2
 		}
 		ref := args[0]
-		var cmds []api.WriteCmd
+		// fields land before the status whatever the argument order: the
+		// store reads tier when a ticket goes active, so
+		// `set x --status active tier=2` must work as well as the reverse.
+		var fields, statuses []api.WriteCmd
 		i := 1
 		for i < len(args) {
 			switch {
@@ -394,12 +397,18 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 					return 2
 				}
 				p := map[string]any{"status": args[i+1]}
-				if i+2 < len(args) && args[i+2] == "--on" {
-					p["on"] = args[i+3]
+				i += 2
+				for i < len(args) && (args[i] == "--on" || args[i] == "--waive") {
+					if i+1 >= len(args) {
+						say("set: %s needs a value", args[i])
+						return 2
+					}
+					// --on names whom a blocked ticket waits on; --waive is a
+					// human's reason for done over an incomplete scorecard
+					p[strings.TrimPrefix(args[i], "--")] = args[i+1]
 					i += 2
 				}
-				cmds = append(cmds, api.WriteCmd{Ticket: ref, Kind: "status.set", Payload: p})
-				i += 2
+				statuses = append(statuses, api.WriteCmd{Ticket: ref, Kind: "status.set", Payload: p})
 			case args[i] == "--pr":
 				if i+1 >= len(args) {
 					say("set: --pr needs a value")
@@ -409,7 +418,7 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 				if args[i+1] != "-" {
 					p["v"] = args[i+1]
 				}
-				cmds = append(cmds, api.WriteCmd{Ticket: ref, Kind: "field.set", Payload: p})
+				fields = append(fields, api.WriteCmd{Ticket: ref, Kind: "field.set", Payload: p})
 				i += 2
 			case strings.Contains(args[i], "="):
 				kv := strings.SplitN(args[i], "=", 2)
@@ -417,13 +426,14 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 				if kv[1] != "-" {
 					p["v"] = jsonValue(kv[1])
 				}
-				cmds = append(cmds, api.WriteCmd{Ticket: ref, Kind: "field.set", Payload: p})
+				fields = append(fields, api.WriteCmd{Ticket: ref, Kind: "field.set", Payload: p})
 				i++
 			default:
 				say("set: cannot parse %q", args[i])
 				return 2
 			}
 		}
+		cmds := append(fields, statuses...)
 		var last int64
 		for _, cc := range cmds {
 			cc.Actor = c.Actor

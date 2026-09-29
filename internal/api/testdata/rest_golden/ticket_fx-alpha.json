@@ -21,6 +21,7 @@
   ],
   "title": "Alpha",
   "fields": {
+    "tier": 1,
     "branch": "agent/test/fx-alpha"
   },
   "parent": "01J0000000000000000000ARC1",

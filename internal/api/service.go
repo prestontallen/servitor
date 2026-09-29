@@ -38,7 +38,8 @@ func (e *APIError) HTTPStatus() int {
 	case "stale_write", "slug_claimed":
 		return 409
 	case "invalid_event", "blocked_requires_on", "human_gate_required",
-		"gate_already_passed", "ambiguous_prefix", "invalid_status", "invalid_payload":
+		"gate_already_passed", "ambiguous_prefix", "invalid_status", "invalid_payload",
+		"tier_required", "contract_required", "criteria_incomplete", "human_waiver_required":
 		return 422
 	case "unreachable":
 		return 503

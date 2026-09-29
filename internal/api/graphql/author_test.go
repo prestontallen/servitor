@@ -12,6 +12,10 @@ import (
 func TestGraphQLAuthorFields(t *testing.T) {
 	svc := testService(t)
 	id := create(t, svc, "gq-author")
+	if _, err := svc.Append(context.Background(), api.WriteCmd{Ticket: id, Kind: "field.set", Actor: "agent:claude",
+		Payload: map[string]any{"field": "tier", "v": 1}}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.Append(context.Background(), api.WriteCmd{Ticket: id, Kind: "status.set", Actor: "agent:claude",
 		Host: "adirondack", Session: "S", Payload: map[string]any{"status": "active"}}); err != nil {
 		t.Fatal(err)
