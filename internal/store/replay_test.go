@@ -165,15 +165,17 @@ func TestReplaySubitemIdentity(t *testing.T) {
 	s := testDB(t)
 	ctx := context.Background()
 	a, _ := mixedHistory(t, s)
+	// values, not pointers: the comparison below is by ==
 	type sub struct {
-		ULID, Body string
-		State      *string
-		Evidence   *string
+		ULID, Body, State, Evidence string
 	}
 	read := func() (crit1 sub, note string) {
 		var doc struct {
-			Criteria []sub `json:"criteria"`
-			Notes    []struct {
+			Criteria []struct {
+				ULID, Body      string
+				State, Evidence *string
+			} `json:"criteria"`
+			Notes []struct {
 				Body string `json:"body"`
 			} `json:"notes"`
 		}
@@ -184,10 +186,17 @@ func TestReplaySubitemIdentity(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		return doc.Criteria[0], doc.Notes[len(doc.Notes)-1].Body
+		c := doc.Criteria[0]
+		deref := func(p *string) string {
+			if p == nil {
+				return "<nil>"
+			}
+			return *p
+		}
+		return sub{c.ULID, c.Body, deref(c.State), deref(c.Evidence)}, doc.Notes[len(doc.Notes)-1].Body
 	}
 	crit, note := read()
-	if crit.Body != "when x then y (edited)" || crit.State == nil || *crit.State != "pass" || crit.Evidence == nil || note != "Intake: tier 1 (amended)" {
+	if crit.Body != "when x then y (edited)" || crit.State != "pass" || crit.Evidence != "go test" || note != "Intake: tier 1 (amended)" {
 		t.Fatalf("history did not land as expected: %+v %q", crit, note)
 	}
 	if _, err := s.Replay(ctx, ReplayOptions{}); err != nil {
@@ -280,7 +289,6 @@ func TestReplayStrictRefusesLossySkips(t *testing.T) {
 	s := testDB(t)
 	ctx := context.Background()
 	a, b := mixedHistory(t, s)
-	before := readModel(t, s, a, b)
 	// a row the projection never accepted: the ledger takes it raw (only
 	// the projection tables are guarded), so replay meets a prefix that
 	// resolves to nothing.
@@ -291,6 +299,9 @@ func TestReplayStrictRefusesLossySkips(t *testing.T) {
 		NewULID(), a).Scan(&badID); err != nil {
 		t.Fatal(err)
 	}
+	// snapshot after the insert: ctx.head is max(ledger.id), which the raw
+	// row moved, and that is not the replay's doing
+	before := readModel(t, s, a, b)
 
 	_, err := s.Replay(ctx, ReplayOptions{})
 	expectFail(t, "strict replay on a row that cannot re-apply", err, "no subitem matches")
@@ -333,10 +344,12 @@ func TestReplayFromLedgerAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lossy: %v", err)
 	}
-	// 4 prefix references on minted sub-items (2 on crit1, 1 rank on plan, 1 on the note);
-	// the full-ulid set on crit2 and the ulid-carrying question survive
-	if rep.Fresh != 7 || rep.Recovered != 0 || len(rep.Skipped) != 4 {
-		t.Fatalf("report %+v, want 7 fresh, 0 recovered, 4 skipped", rep)
+	// 5 references to minted sub-items are lost: 2 on crit1, the full-ulid
+	// set on crit2 (its add carried no ulid either), the rank on plan, the
+	// note edit. Only the question, whose add carried a ulid, keeps its
+	// identity, and nothing references it.
+	if rep.Fresh != 7 || rep.Recovered != 0 || len(rep.Skipped) != 5 {
+		t.Fatalf("report %+v, want 7 fresh, 0 recovered, 5 skipped", rep)
 	}
 	doc, err := s.CtxRead(ctx, "rp-a2")
 	if err != nil {
