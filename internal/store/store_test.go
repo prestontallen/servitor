@@ -301,7 +301,7 @@ func TestFullHistoryIsQueryable(t *testing.T) {
 		`SELECT count(*) FROM ledger WHERE ticket_ulid=$1`, id).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
+	if n != 4 { // create, note, tier, active
 		t.Errorf("history incomplete: %d events", n)
 	}
 	fmt.Fprintln(os.Stderr, "history ok")

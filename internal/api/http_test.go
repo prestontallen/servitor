@@ -148,6 +148,11 @@ func TestSSEStreamDeliversChange(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// classified before the stream opens, so the only change it sees is the activation
+	if _, err := s.Append(ctx, WriteCmd{Ticket: id, Kind: "field.set", Actor: "agent:test",
+		Payload: map[string]any{"field": "tier", "v": 1}}); err != nil {
+		t.Fatal(err)
+	}
 	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/events/stream", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
