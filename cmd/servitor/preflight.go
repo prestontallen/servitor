@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/prestontallen/servitor/internal/api"
 )
 
 // toneInstalled reports whether install.sh linked the servitor-tone skill
@@ -82,7 +84,8 @@ func branchName(tmpl, agent, slug string, fields map[string]any, focused bool) (
 // origin/main, and who holds the focused card. Best effort: every git call
 // is capped, a failure prints what it could, and nothing here can block a
 // session. doc is the ctx aggregate for the focused ticket, or nil.
-func preflight(w io.Writer, dir, actor, agentHint string, doc []byte) {
+func preflight(w io.Writer, dir string, self api.Author, agentHint string, doc []byte) {
+	actor := self.Actor
 	git := func(timeout time.Duration, args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
@@ -150,6 +153,7 @@ func preflight(w io.Writer, dir, actor, agentHint string, doc []byte) {
 			ActiveBy    string         `json:"active_by"`
 			ActiveSince string         `json:"active_since"`
 			Fields      map[string]any `json:"fields"`
+			Authors     []ctxAuthor    `json:"authors"`
 		}
 		if json.Unmarshal(doc, &f) == nil && f.Slug != "" {
 			slug, fields, focused = f.Slug, f.Fields, true
@@ -164,6 +168,9 @@ func preflight(w io.Writer, dir, actor, agentHint string, doc []byte) {
 				if v, ok := f.Fields[k]; ok && v != nil && v != "" {
 					fmt.Fprintf(w, "handoff %s: %v\n", k, v)
 				}
+			}
+			if line := handoffLine(self, f.Authors, f.Fields["pushed"]); line != "" {
+				fmt.Fprintln(w, line)
 			}
 		}
 	}

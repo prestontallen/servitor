@@ -142,8 +142,17 @@ SERVITOR_DSN=... servitord replay
 | `SERVITOR_DSN` | Postgres/Timescale DSN (daemon, MCP) | local `servitor` DB |
 | `SERVITOR_ADDR` | daemon listen address | `:8181` |
 | `SERVITOR_TOKEN` | bearer-token auth for the API | off |
-| `SERVITOR_ACTOR` | actor of record | `agent:cli` |
+| `SERVITOR_ACTOR` | actor of record; overrides the derived one | derived: `agent:claude` under Claude Code, `agent:hermes` under Hermes, else `agent:cli` |
+| `SERVITOR_HOST` | host stamped on writes (containers) | short lowercased hostname |
 | `SERVITOR_TICKET` | hook focus ticket | — |
+
+Every write names its author: the actor, the host it came from, and the
+harness session (`CLAUDE_CODE_SESSION_ID` or `HERMES_SESSION_ID`, which the
+harness exports to every command). The CLI sends them as `X-Servitor-Host`
+and `X-Servitor-Session`; a write without them is accepted and reads back
+host `null`, session `""`. `servitor ctx` lists a ticket's `authors`
+(newest ten plus `authors_total`), and the hook prints one `handoff
+author:` line comparing you with the last one.
 
 ## Database bootstrap (one-time)
 

@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/prestontallen/servitor/internal/api"
 )
 
 func TestFirstTurn(t *testing.T) {
@@ -69,7 +71,7 @@ func TestPreflightWorktreeHint(t *testing.T) {
 	gitOut(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
 
 	var b bytes.Buffer
-	preflight(&b, repo, "agent:hermes", "", nil)
+	preflight(&b, repo, api.Author{Actor: "agent:hermes"}, "", nil)
 	if !strings.Contains(b.String(), "Hermes: then cd ../") {
 		t.Errorf("actor agent:hermes wants Hermes wording, got:\n%s", b.String())
 	}
@@ -78,14 +80,14 @@ func TestPreflightWorktreeHint(t *testing.T) {
 	}
 
 	b.Reset()
-	preflight(&b, repo, "agent:claude", "", nil)
+	preflight(&b, repo, api.Author{Actor: "agent:claude"}, "", nil)
 	if !strings.Contains(b.String(), "Claude Code: then EnterWorktree") {
 		t.Errorf("actor agent:claude wants the Claude line, got:\n%s", b.String())
 	}
 
 	// the env override beats the actor
 	b.Reset()
-	preflight(&b, repo, "agent:cli", "hermes", nil)
+	preflight(&b, repo, api.Author{Actor: "agent:cli"}, "hermes", nil)
 	if !strings.Contains(b.String(), "Hermes: then cd ../") {
 		t.Errorf("SERVITOR_AGENT=hermes override wants Hermes wording, got:\n%s", b.String())
 	}

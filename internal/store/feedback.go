@@ -20,7 +20,7 @@ func (s *Store) Feedback(ctx context.Context, f FeedbackFilter) ([]LedgerEvent, 
 		f.Limit = 1000
 	}
 	rows, err := s.Pool.Query(ctx, `
-SELECT id, ulid, ticket_ulid, ts, actor, actor_type::text, session, kind, payload
+SELECT `+ledgerCols+`
 FROM ledger
 WHERE kind='feedback'
   AND ($1::timestamptz IS NULL OR ts >= $1)
@@ -35,7 +35,7 @@ LIMIT $3`,
 	evs := []LedgerEvent{}
 	for rows.Next() {
 		var e LedgerEvent
-		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Kind, &e.Payload); err != nil {
+		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Host, &e.Kind, &e.Payload); err != nil {
 			return nil, err
 		}
 		evs = append(evs, e)
@@ -62,7 +62,7 @@ type LedgerFilter struct {
 	PerTicket int
 }
 
-const ledgerCols = `id, ulid, ticket_ulid, ts, actor, actor_type::text, session, kind, payload`
+const ledgerCols = `id, ulid, ticket_ulid, ts, actor, actor_type::text, session, host, kind, payload`
 
 const ledgerWhere = `
 WHERE ($1::bigint IS NULL OR id > $1)
@@ -106,7 +106,7 @@ LIMIT $6`
 	evs := []LedgerEvent{}
 	for rows.Next() {
 		var e LedgerEvent
-		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Kind, &e.Payload); err != nil {
+		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Host, &e.Kind, &e.Payload); err != nil {
 			return nil, err
 		}
 		e.Class = EventClass(e.Kind)

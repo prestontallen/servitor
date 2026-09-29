@@ -26,6 +26,24 @@
   "parent": "01J0000000000000000000ARC1",
   "review": null,
   "status": "active",
+  "authors": [
+    {
+      "host": null,
+      "actor": "agent:test",
+      "events": 8,
+      "last_ts": "<ts>",
+      "session": "",
+      "first_ts": "<ts>"
+    },
+    {
+      "host": null,
+      "actor": "human:preston",
+      "events": 1,
+      "last_ts": "<ts>",
+      "session": "",
+      "first_ts": "<ts>"
+    }
+  ],
   "contract": null,
   "criteria": [
     {
@@ -50,5 +68,6 @@
   "blocked_on": null,
   "updated_at": "<ts>",
   "active_since": "<ts>",
+  "authors_total": 2,
   "blocked_since": null
 }

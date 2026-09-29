@@ -138,6 +138,21 @@ never afterwards, or the record lags reality within minutes:
 servitor set <ref> head=<sha> pushed=false next="human reads the summary, then commit"
 ```
 
+The hook also prints one `handoff author:` line: you compared with the
+ticket's last author (actor, host, harness session). Act on it before
+anything else:
+
+| line says | meaning | do |
+|---|---|---|
+| same session | your own work | carry on |
+| new session on this host | a new context took over (`/clear`, restart) | reread the ledger; worktree and commits are on this disk |
+| other host H | the work lives on H | read `pushed`; if false the work is stranded on H, say so and do not rebuild it here |
+| other agent | another runtime wrote last | its worktree and cd hints differ from yours |
+| human wrote last | the human redirected | read their events first; they outrank the plan |
+| predates host records | legacy events | check `branch` and `pushed` before trusting the worktree |
+
+No focus ticket? `servitor ctx <ref>` carries the same `authors` list.
+
 Plan steps are marked done when they are done (`servitor subitem <ref>
 <prefix> --state done`), not in bulk at presentation. Mid-ticket, the Plan
 card must say where you are.
@@ -227,7 +242,9 @@ happens: `servitor set <ref> checkpoint=summary-seen` (then `commit-ok`,
 ## Environment
 
 `SERVITOR_API` (default http://localhost:8181), `SERVITOR_ACTOR`
-(default `agent:cli` — set per agent, e.g. `agent:hermes`),
+(derived from the harness: `agent:claude` / `agent:hermes`, `agent:cli`
+only with no harness; do not export it by hand), `SERVITOR_HOST`
+(overrides the stamped hostname, for containers),
 `SERVITOR_HUMAN` (Preston), `SERVITOR_TICKET` (hook focus),
 `SERVITOR_DSN` (daemon/MCP only).
 

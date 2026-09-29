@@ -7,6 +7,7 @@
     "actor": "agent:test",
     "actor_type": "agent",
     "session": "",
+    "host": null,
     "kind": "feedback",
     "class": "",
     "payload": {

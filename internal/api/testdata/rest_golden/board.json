@@ -12,6 +12,7 @@
     "parent": "01J0000000000000000000ARC1",
     "active_by": null,
     "active_since": null,
+    "active_host": null,
     "criteria_pass": 0,
     "criteria_total": 0
   },
@@ -28,6 +29,7 @@
     "parent": "01J0000000000000000000ARC1",
     "active_by": "agent:test",
     "active_since": "<ts>",
+    "active_host": null,
     "criteria_pass": 1,
     "criteria_total": 1
   }

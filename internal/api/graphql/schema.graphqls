@@ -77,6 +77,8 @@ type Ticket {
   active_by: String
   "When that actor set the ticket active."
   active_since: Time
+  "Host that active event came from: where the card's worktree lives."
+  active_host: String
   "Criteria in state pass."
   criteria_pass: Int!
   "Criteria written."
@@ -115,8 +117,10 @@ type Event {
   actor: String!
   "human | agent | system."
   actor_type: String!
-  "Session tag the writer supplied, if any."
+  "Harness session of the writer (Claude Code or Hermes session id); empty when none."
   session: String
+  "Machine the event was written from; null for events before hosts were recorded."
+  host: String
   "Event kind: note, decision, gate, status.set, field.set, subitem.add, ..."
   kind: String!
   "signal | transition, derived from kind."

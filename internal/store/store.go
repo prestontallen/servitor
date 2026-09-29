@@ -25,7 +25,8 @@ type Event struct {
 	TicketULID string
 	Actor      string // "human:preston" | "agent:<id>" | "system"
 	ActorType  string // "human" | "agent" | "system"
-	Session    string
+	Session    string // harness session id; "" when none
+	Host       string // machine the write came from; "" stores NULL
 	Kind       string
 	Payload    map[string]any
 }
@@ -237,9 +238,9 @@ func (s *Store) AppendEvent(ctx context.Context, e Event, expectUpdated time.Tim
 			return err
 		}
 		row := tx.QueryRow(ctx,
-			`INSERT INTO ledger (ulid, ticket_ulid, ts, actor, actor_type, session, kind, payload)
-			 VALUES ($1,$2,now(),$3,$4,$5,$6,$7) RETURNING id, ts`,
-			NewULID(), e.TicketULID, e.Actor, e.ActorType, e.Session, e.Kind, pl)
+			`INSERT INTO ledger (ulid, ticket_ulid, ts, actor, actor_type, session, host, kind, payload)
+			 VALUES ($1,$2,now(),$3,$4,$5,NULLIF($6,''),$7,$8) RETURNING id, ts`,
+			NewULID(), e.TicketULID, e.Actor, e.ActorType, e.Session, e.Host, e.Kind, pl)
 		var ts time.Time
 		if err := row.Scan(&eventID, &ts); err != nil {
 			return err

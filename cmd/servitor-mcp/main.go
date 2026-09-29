@@ -27,6 +27,7 @@ func main() {
 		In:      os.Stdin,
 		Out:     os.Stdout,
 		Err:     os.Stderr,
+		Author:  api.LocalAuthor(os.Getenv),
 	}
 	if err := srv.Serve(ctx); err != nil {
 		log.Fatalf("mcp serve: %v", err)
