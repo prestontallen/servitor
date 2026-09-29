@@ -1,7 +1,8 @@
 # Every PR must build. The Go packages embed the built GUI (internal/api
-# static), so vite build runs first. go test skips DB-backed tests when no
-# Postgres is reachable; it still catches compile errors and pure-logic tests.
-# tests/install-*.sh cover install.sh, which no go test reaches.
+# static), so vite build runs first. The DB-backed tests run against the
+# timescaledb service below and a skipped test fails the job: a skipped
+# invariant is an unverified one. tests/install-*.sh cover install.sh,
+# which no go test reaches.
 name: ci
 on:
   pull_request:
@@ -10,6 +11,21 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # the prod server's major (pg17) and extension line; the test
+        # packages create and drop their own databases through the
+        # superuser, and 001_init needs the timescaledb extension loaded
+        image: timescale/timescaledb:2.30.0-pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,7 +41,22 @@ jobs:
       # of either side fails here
       - run: go tool gqlgen generate && git diff --exit-code -- internal/api/graphql go.mod go.sum
       - run: go vet ./...
-      - run: go test ./...
+      # -p 1: each package drops and creates its own databases on the one
+      # server; serial packages keep those apart. -json feeds the skip gate
+      # below; the plain output still streams to the log.
+      - run: set -o pipefail; go test -p 1 -json ./... | tee test.json | jq -rj 'select(.Output != null) | .Output'
+        env:
+          SERVITOR_TEST_ADMIN_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      # runs even when a test failed, so a skip is named in the same log
+      - name: no test may skip
+        if: always()
+        run: |
+          skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | .Package + " " + .Test' test.json)
+          if [ -n "$skipped" ]; then
+            echo "skipped tests (a skipped invariant is an unverified one):"
+            echo "$skipped"
+            exit 1
+          fi
       # install.sh is shell and no go test reaches it; these stub the network,
       # the service manager and HOME, so they run anywhere
       - run: ./tests/install-release.sh
