@@ -86,6 +86,7 @@ func TestTicketLifecycleAndDerivedState(t *testing.T) {
 	s := testDB(t)
 	ctx := context.Background()
 	id := newTicket(t, s, "life-cycle")
+	setTier(t, s, id, 1)
 	mustAppend(t, s, evt(id, "status.set", map[string]any{"status": "active"}))
 	mustAppend(t, s, Event{TicketULID: id, Actor: "human:preston", ActorType: "human", Session: "t",
 		Kind: "gate", Payload: map[string]any{"gate": "contract_approved"}})
@@ -234,6 +235,7 @@ func TestLedgerAppendOnly(t *testing.T) {
 func TestStaleWriteRejected(t *testing.T) {
 	s := testDB(t)
 	id := newTicket(t, s, "stale-test")
+	setTier(t, s, id, 1)
 	var updated time.Time
 	if err := s.Pool.QueryRow(context.Background(), `SELECT updated_at FROM tickets WHERE ulid=$1`, id).Scan(&updated); err != nil {
 		t.Fatal(err)
@@ -292,13 +294,14 @@ func TestFullHistoryIsQueryable(t *testing.T) {
 	s := testDB(t)
 	id := newTicket(t, s, "history-test")
 	mustAppend(t, s, evt(id, "note", map[string]any{"v": "one"}))
+	setTier(t, s, id, 0)
 	mustAppend(t, s, evt(id, "status.set", map[string]any{"status": "active"}))
 	var n int
 	if err := s.Pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM ledger WHERE ticket_ulid=$1`, id).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
+	if n != 4 { // create, note, tier, active
 		t.Errorf("history incomplete: %d events", n)
 	}
 	fmt.Fprintln(os.Stderr, "history ok")

@@ -273,6 +273,14 @@ func classifyWriteErr(err error) error {
 	switch {
 	case errors.Is(err, store.ErrStaleWrite):
 		return &APIError{Code: "stale_write", Message: msg}
+	case errors.Is(err, store.ErrTierRequired):
+		return &APIError{Code: "tier_required", Message: msg}
+	case errors.Is(err, store.ErrContractRequired):
+		return &APIError{Code: "contract_required", Message: msg}
+	case errors.Is(err, store.ErrCriteriaIncomplete):
+		return &APIError{Code: "criteria_incomplete", Message: msg}
+	case errors.Is(err, store.ErrHumanWaiverRequired):
+		return &APIError{Code: "human_waiver_required", Message: msg}
 	case containsAny(msg, `blocked requires "on"`):
 		return &APIError{Code: "blocked_requires_on", Message: msg}
 	case containsAny(msg, "human actor"):

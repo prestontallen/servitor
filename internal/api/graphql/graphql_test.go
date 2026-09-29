@@ -94,7 +94,9 @@ func appendOK(t *testing.T, s api.Service, ticket, kind string, payload map[stri
 func create(t *testing.T, s api.Service, slug string) string {
 	t.Helper()
 	id := store.NewULID()
-	appendOK(t, s, id, "ticket.create", map[string]any{"slug": slug, "title": "T " + slug})
+	// tier in the create payload: the store needs one before active, and a
+	// separate field.set would shift the event counts these tests assert
+	appendOK(t, s, id, "ticket.create", map[string]any{"slug": slug, "title": "T " + slug, "tier": 1})
 	return id
 }
 

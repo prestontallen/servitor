@@ -12,6 +12,7 @@
     "class": "transition",
     "payload": {
       "slug": "fx-alpha",
+      "tier": 1,
       "title": "Alpha"
     }
   },

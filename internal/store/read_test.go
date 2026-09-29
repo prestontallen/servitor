@@ -86,6 +86,7 @@ func TestCtxReadWholeAggregate(t *testing.T) {
 	s := testDB(t)
 	ctx := context.Background()
 	id := newTicket(t, s, "ctx-read-test")
+	setTier(t, s, id, 1)
 	mustAppend(t, s, evt(id, "status.set", map[string]any{"status": "active"}))
 	mustAppend(t, s, Event{TicketULID: id, Actor: "human:preston", ActorType: "human", Kind: "gate",
 		Payload: map[string]any{"gate": "contract_approved"}})

@@ -264,6 +264,10 @@ func (s *Store) AppendEvent(ctx context.Context, e Event, expectUpdated time.Tim
 					return ErrStaleWrite
 				}
 			}
+			// the rules of the live path; see policy.go. Replay skips them.
+			if err := policy(ctx, tx, e); err != nil {
+				return err
+			}
 		}
 
 		if err := applyRow(ctx, tx, e, ts, eventID, freshULID); err != nil {
@@ -339,9 +343,19 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64,
 		}
 		title, _ := p["title"].(string)
 		rank := numField(p, "rank")
+		// tier in the create payload lands in fields, so a ticket can be
+		// classified in the same event that creates it
+		fields := "{}"
+		if raw, has := p["tier"]; has {
+			b, _ := json.Marshal(raw)
+			if _, ok := parseTier(b); !ok {
+				return fmt.Errorf("invalid tier %s (want 0..3)", b)
+			}
+			fields = `{"tier": ` + string(b) + `}`
+		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO tickets (ulid, slug, title, rank, created_at, updated_at)
-			 VALUES ($1,$2,$3,$4,$5,$5)`, e.TicketULID, slug, title, rank, ts); err != nil {
+			`INSERT INTO tickets (ulid, slug, title, rank, fields, created_at, updated_at)
+			 VALUES ($1,$2,$3,$4,$5::jsonb,$6,$6)`, e.TicketULID, slug, title, rank, fields, ts); err != nil {
 			return err
 		}
 

@@ -37,7 +37,7 @@ func goldenFixture(t *testing.T, s Service) {
 	ctx := context.Background()
 	steps := []WriteCmd{
 		{Ticket: fxArc, Kind: "ticket.create", Payload: map[string]any{"slug": "fx-arc", "title": "Fixture arc"}},
-		{Ticket: fxAlpha, Kind: "ticket.create", Payload: map[string]any{"slug": "fx-alpha", "title": "Alpha"}},
+		{Ticket: fxAlpha, Kind: "ticket.create", Payload: map[string]any{"slug": "fx-alpha", "title": "Alpha", "tier": 1}},
 		{Ticket: fxBeta, Kind: "ticket.create", Payload: map[string]any{"slug": "fx-beta", "title": "Beta"}},
 		{Ticket: fxDone, Kind: "ticket.create", Payload: map[string]any{"slug": "fx-done", "title": "Done one"}},
 		{Ticket: fxAlpha, Kind: "field.set", Payload: map[string]any{"field": "parent", "v": fxArc}},
