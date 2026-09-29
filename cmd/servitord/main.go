@@ -24,6 +24,11 @@ func usage(w io.Writer) {
 Usage:
   servitord                 serve the API (default)
   servitord apply-schema    create/repair the schema on SERVITOR_DSN, then exit
+  servitord replay [--dry-run] [--lossy]
+                            rebuild the read model from the ledger on SERVITOR_DSN,
+                            then exit. --dry-run does the whole run and rolls it
+                            back; --lossy skips rows that fail to re-apply instead
+                            of refusing. Live appends wait for the run.
   servitord --help          print this and exit
 
 Environment:
@@ -45,6 +50,8 @@ func main() {
 			return
 		case "apply-schema":
 			// handled below
+		case "replay":
+			os.Exit(replay(os.Args[2:], os.Stdout, os.Stderr))
 		default:
 			fmt.Fprintf(os.Stderr, "servitord: unknown argument %q\n\n", os.Args[1])
 			usage(os.Stderr)
@@ -54,10 +61,7 @@ func main() {
 
 	// servitord apply-schema: create/repair the schema on SERVITOR_DSN, then exit.
 	if len(os.Args) > 1 && os.Args[1] == "apply-schema" {
-		dsn := os.Getenv("SERVITOR_DSN")
-		if dsn == "" {
-			dsn = "postgres://postgres:psql@localhost:5432/servitor?sslmode=disable"
-		}
+		dsn := dsnFromEnv()
 		ctx := context.Background()
 		s, err := store.Open(ctx, dsn)
 		if err != nil {
@@ -70,10 +74,7 @@ func main() {
 		return
 	}
 
-	dsn := os.Getenv("SERVITOR_DSN")
-	if dsn == "" {
-		dsn = "postgres://postgres:psql@localhost:5432/servitor?sslmode=disable"
-	}
+	dsn := dsnFromEnv()
 	addr := os.Getenv("SERVITOR_ADDR")
 	if addr == "" {
 		addr = ":8181"

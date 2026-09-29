@@ -315,13 +315,13 @@ SELECT jsonb_build_object(
                          FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='criterion'), '[]'::jsonb),
   'plan', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank, s.created_at, s.ulid)
                      FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='plan'), '[]'::jsonb),
-  'decisions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'what',s.body,'why',s.fields->>'why'))
+  'decisions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'what',s.body,'why',s.fields->>'why') ORDER BY s.created_at, s.ulid)
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='decision'), '[]'::jsonb),
   'notes', COALESCE((SELECT jsonb_agg(jsonb_build_object('body',s.body,'ts',s.created_at) ORDER BY s.created_at DESC)
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='note'), '[]'::jsonb),
-  'links', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'url',s.state))
+  'links', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'url',s.state) ORDER BY s.created_at, s.ulid)
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='link'), '[]'::jsonb),
-  'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body))
+  'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body) ORDER BY s.created_at, s.ulid)
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='question'), '[]'::jsonb),
   'findings', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank, s.created_at, s.ulid)
                          FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='finding'), '[]'::jsonb),
