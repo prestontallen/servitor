@@ -134,6 +134,20 @@ SERVITOR_DSN=... servitord replay --dry-run
 SERVITOR_DSN=... servitord replay
 ```
 
+## Tests
+
+`go test ./...` runs the pure-logic tests anywhere. The database-backed
+tests (store, api, graphql, mcp, cli) create and drop throwaway databases
+through a superuser DSN in `SERVITOR_TEST_ADMIN_DSN`, and skip without it.
+The server needs the timescaledb extension.
+
+```
+SERVITOR_TEST_ADMIN_DSN='postgres://postgres:PW@localhost:5432/postgres?sslmode=disable' go test -p 1 ./...
+```
+
+CI runs the same against a `timescale/timescaledb` service on every PR
+and fails the job on any skipped test.
+
 ## Environment
 
 | Variable | Purpose | Default |
