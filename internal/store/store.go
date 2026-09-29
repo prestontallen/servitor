@@ -74,6 +74,10 @@ func CardWord(gate string) string {
 
 type Store struct {
 	Pool *pgxpool.Pool
+
+	// afterReplayLock runs inside Replay once the projection tables are
+	// locked. Tests use it to prove a concurrent append waits; nil otherwise.
+	afterReplayLock func()
 }
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
@@ -261,15 +265,8 @@ func (s *Store) AppendEvent(ctx context.Context, e Event, expectUpdated time.Tim
 			}
 		}
 
-		if err := apply(ctx, tx, e, ts, eventID); err != nil {
+		if err := applyRow(ctx, tx, e, ts, eventID, freshULID); err != nil {
 			return err
-		}
-
-		// every event touches the aggregate's updated_at (stale-write token)
-		if e.Kind != "ticket.create" {
-			if _, err := tx.Exec(ctx, `UPDATE tickets SET updated_at=$1 WHERE ulid=$2`, ts, e.TicketULID); err != nil {
-				return err
-			}
 		}
 
 		// watermark + notify ride the same transaction
@@ -303,7 +300,31 @@ func EventClass(kind string) string {
 
 var ErrStaleWrite = errors.New("stale write: ticket changed since read")
 
-func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64) error {
+// minter hands apply() the ULID for a sub-item it creates without one in the
+// payload (subitem.add before finding-ids, every note and decision). The live
+// write path mints fresh; Replay hands back the ULID the read model already
+// held for the same (ticket, kind, created_at), so prefixes recorded in later
+// events keep resolving.
+type minter func(ticket, kind string, ts time.Time) (string, error)
+
+func freshULID(string, string, time.Time) (string, error) { return NewULID(), nil }
+
+// applyRow projects one ledger row: apply, then the aggregate's updated_at
+// (the stale-write token). AppendEvent and Replay both go through here, so
+// the live projection and a rebuilt one cannot drift.
+func applyRow(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64, mint minter) error {
+	if err := apply(ctx, tx, e, ts, eventID, mint); err != nil {
+		return err
+	}
+	if e.Kind != "ticket.create" {
+		if _, err := tx.Exec(ctx, `UPDATE tickets SET updated_at=$1 WHERE ulid=$2`, ts, e.TicketULID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64, mint minter) error {
 	p := e.Payload
 	switch e.Kind {
 	case "ticket.create":
@@ -312,7 +333,7 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			return errors.New("ticket.create requires slug")
 		}
 		// claim first: one mechanism owns slug uniqueness (history-wide)
-		if err := claimSlug(ctx, tx, e.TicketULID, slug); err != nil {
+		if err := claimSlug(ctx, tx, e.TicketULID, slug, ts); err != nil {
 			return err
 		}
 		title, _ := p["title"].(string)
@@ -335,7 +356,7 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 			if !hasV || s == "" {
 				return errors.New("slug rename requires v")
 			}
-			if err := claimSlug(ctx, tx, e.TicketULID, s); err != nil {
+			if err := claimSlug(ctx, tx, e.TicketULID, s, ts); err != nil {
 				return err
 			}
 			_, err := tx.Exec(ctx, `UPDATE tickets SET slug=$1 WHERE ulid=$2`, s, e.TicketULID)
@@ -454,9 +475,12 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 		if kind == "" {
 			return errors.New("subitem.add requires kind")
 		}
-		sub := NewULID()
-		if s, ok := p["ulid"].(string); ok && s != "" {
-			sub = s
+		sub, _ := p["ulid"].(string)
+		if sub == "" {
+			var err error
+			if sub, err = mint(e.TicketULID, kind, ts); err != nil {
+				return err
+			}
 		}
 		fields := p["fields"]
 		if fields == nil {
@@ -511,19 +535,39 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 		if what == "" || why == "" {
 			return errors.New("decision requires what and why")
 		}
-		_, err := tx.Exec(ctx,
+		// the dedupe index drops a repeated decision; check first so a
+		// duplicate never mints an identity that no row will carry.
+		var dup bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM subitems WHERE ticket_ulid=$1 AND kind='decision'
+			   AND md5(body)=md5($2::text) AND md5(coalesce(fields->>'why',''))=md5($3::text))`,
+			e.TicketULID, what, why).Scan(&dup); err != nil {
+			return err
+		}
+		if dup {
+			return nil
+		}
+		sub, err := mint(e.TicketULID, "decision", ts)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx,
 			`INSERT INTO subitems (ulid, ticket_ulid, kind, rank, body, fields, created_at, updated_at)
 			 VALUES ($1,$2,'decision',0,$3::text,jsonb_build_object('why',$4::text),$5,$5)
 			 ON CONFLICT DO NOTHING`,
-			NewULID(), e.TicketULID, what, why, ts)
+			sub, e.TicketULID, what, why, ts)
 		return err
 
 	case "note":
 		v, _ := p["v"].(string)
-		_, err := tx.Exec(ctx,
+		sub, err := mint(e.TicketULID, "note", ts)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx,
 			`INSERT INTO subitems (ulid, ticket_ulid, kind, rank, body, created_at, updated_at)
 			 VALUES ($1,$2,'note',$3,$4,$5,$5)`,
-			NewULID(), e.TicketULID, ts.UnixMilli(), v, ts)
+			sub, e.TicketULID, ts.UnixMilli(), v, ts)
 		return err
 
 	case "contract":
@@ -554,7 +598,9 @@ func apply(ctx context.Context, tx pgx.Tx, e Event, ts time.Time, eventID int64)
 // gate ledger_id backfill is handled by Gate using RETURNING — see AppendEventGate.
 // (kept simple here: gate_events.ledger_id is informational)
 
-func claimSlug(ctx context.Context, tx pgx.Tx, ticket, slug string) error {
+// claimSlug records the claim at the event's ts (the same instant as now()
+// on the live path), so a replayed history carries the original times.
+func claimSlug(ctx context.Context, tx pgx.Tx, ticket, slug string, ts time.Time) error {
 	lower := lowerString(slug)
 	var owner string
 	err := tx.QueryRow(ctx, `SELECT ticket_ulid FROM slug_history WHERE slug_lower=$1 FOR UPDATE`, lower).Scan(&owner)
@@ -566,7 +612,7 @@ func claimSlug(ctx context.Context, tx pgx.Tx, ticket, slug string) error {
 		return err
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		_, err = tx.Exec(ctx, `INSERT INTO slug_history (slug_lower, ticket_ulid) VALUES ($1,$2)`, lower, ticket)
+		_, err = tx.Exec(ctx, `INSERT INTO slug_history (slug_lower, ticket_ulid, claimed_at) VALUES ($1,$2,$3)`, lower, ticket, ts)
 		return err
 	}
 	return err

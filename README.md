@@ -114,6 +114,26 @@ before the restart, so a pending migration never leaves the daemon 500ing
 on new columns; if it fails, install aborts without restarting.
 `servitor-mcp` sources the same file.
 
+## Replay
+
+`servitord replay` rebuilds the read model (tickets, slug history,
+sub-items, gates, watermark) from the ledger alone, for when the
+projection code changed or an old daemon dropped a payload key. It runs
+in one transaction that holds every writer until it commits; the ledger
+is never touched. Sub-items keep their ULIDs: the run snapshots
+`(ticket, kind, created_at) → ULID` before truncating, so prefixes
+recorded in later events still resolve. A row that fails to re-apply
+aborts the run naming the event; `--lossy` skips such rows and lists
+them. `--dry-run` does the whole run, rolls it back, and prints the same
+report. On an empty read model (a restore from a ledger dump alone)
+sub-item identities are minted fresh and events that addressed the old
+ones by prefix are the rows `--lossy` skips.
+
+```
+SERVITOR_DSN=... servitord replay --dry-run
+SERVITOR_DSN=... servitord replay
+```
+
 ## Environment
 
 | Variable | Purpose | Default |
