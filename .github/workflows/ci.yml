@@ -47,7 +47,9 @@ jobs:
       - run: set -o pipefail; go test -p 1 -json ./... | tee test.json | jq -rj 'select(.Output != null) | .Output'
         env:
           SERVITOR_TEST_ADMIN_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      # runs even when a test failed, so a skip is named in the same log
       - name: no test may skip
+        if: always()
         run: |
           skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | .Package + " " + .Test' test.json)
           if [ -n "$skipped" ]; then
