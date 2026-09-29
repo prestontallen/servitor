@@ -13,6 +13,16 @@
   "parent": null,
   "review": null,
   "status": "queued",
+  "authors": [
+    {
+      "host": null,
+      "actor": "agent:test",
+      "events": 1,
+      "last_ts": "<ts>",
+      "session": "",
+      "first_ts": "<ts>"
+    }
+  ],
   "contract": null,
   "criteria": [],
   "feedback": [],
@@ -24,5 +34,6 @@
   "blocked_on": null,
   "updated_at": "<ts>",
   "active_since": null,
+  "authors_total": 1,
   "blocked_since": null
 }

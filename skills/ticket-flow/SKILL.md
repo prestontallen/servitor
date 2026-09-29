@@ -21,7 +21,9 @@ Every session starts with `servitor hook` output (Claude: the SessionStart
 hook install.sh registers; Hermes: the pre_llm_call shell hook, registered
 by install.sh as `servitor hook --hermes`). Read it, then check:
 
-1. `SERVITOR_ACTOR` is `agent:<you>`, not the default `agent:cli`.
+1. The `handoff author:` line: are you continuing, taking over on this
+   host, or looking at work that lives on another host? (servitor skill,
+   Handoff.) The actor comes from the harness; do not export it.
 2. Where you are. `canonical checkout` means create a worktree before
    editing; the commands are in the output. In a worktree, the branch
    must be your ticket's. `canonical checkout on <anything but main>`
@@ -60,7 +62,6 @@ so Jira links the branch, commits and PR to its issue. Three rules:
 - The PR title starts with the key: `PROJ-123 <ticket-slug>: <one-line what>`.
 
 ```bash
-export SERVITOR_ACTOR=agent:<agentname>
 servitor set <ref> --status active
 git fetch origin
 git worktree add -b <branch> ../servitor-worktrees/<ticket-slug> origin/main

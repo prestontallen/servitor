@@ -80,6 +80,9 @@ type Card struct {
 	// agent does not start a card active under another actor.
 	ActiveBy    *string    `json:"active_by"`
 	ActiveSince *time.Time `json:"active_since"`
+	// ActiveHost is the host that event came from: where the card's
+	// worktree and unpushed commits live. Null for legacy events.
+	ActiveHost *string `json:"active_host"`
 	// CriteriaPass/CriteriaTotal is the board's plan mark
 	// (references/events.md): criteria passed over criteria written.
 	CriteriaPass  int64 `json:"criteria_pass"`
@@ -94,9 +97,9 @@ const activeSetWhere = `l.ticket_ulid=t.ulid AND l.kind='status.set' AND l.paylo
 // with the who-holds-the-card join. Callers append WHERE / ORDER BY.
 const cardSelectSQL = `
 SELECT t.ulid, t.slug, t.title, t.status::text, t.rank, t.card_word::text, t.blocked_on, t.blocked_since, t.updated_at, t.parent,
-       a.actor, a.ts,
+       a.actor, a.ts, a.host,
        c.pass, c.total
-FROM tickets t LEFT JOIN LATERAL (SELECT l.actor, l.ts FROM ledger l WHERE ` + activeSetWhere + `
+FROM tickets t LEFT JOIN LATERAL (SELECT l.actor, l.ts, l.host FROM ledger l WHERE ` + activeSetWhere + `
                                   ORDER BY l.id DESC LIMIT 1) a ON t.status='active'
 LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE s.state='pass') AS pass, count(*) AS total
                    FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='criterion') c ON true`
@@ -116,7 +119,7 @@ ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, t.
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.ActiveHost, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -175,7 +178,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]Card, error) {
 	var cards []Card
 	for rows.Next() {
 		var c Card
-		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
+		if err := rows.Scan(&c.ULID, &c.Slug, &c.Title, &c.Status, &c.Rank, &c.CardWord, &c.BlockedOn, &c.BlockedAt, &c.UpdatedAt, &c.Parent, &c.ActiveBy, &c.ActiveSince, &c.ActiveHost, &c.CriteriaPass, &c.CriteriaTotal); err != nil {
 			return nil, err
 		}
 		cards = append(cards, c)
@@ -192,6 +195,7 @@ type LedgerEvent struct {
 	Actor     string         `json:"actor"`
 	ActorType string         `json:"actor_type"`
 	Session   *string        `json:"session"`
+	Host      *string        `json:"host"`
 	Kind      string         `json:"kind"`
 	Class     string         `json:"class"` // signal | transition (derived from kind)
 	Payload   map[string]any `json:"payload"`
@@ -202,7 +206,7 @@ func (s *Store) History(ctx context.Context, ticketULID string, limit int) ([]Le
 		limit = 10000
 	}
 	rows, err := s.Pool.Query(ctx, `
-SELECT id, ulid, ticket_ulid, ts, actor, actor_type::text, session, kind, payload
+SELECT `+ledgerCols+`
 FROM ledger WHERE ticket_ulid=$1 ORDER BY id LIMIT $2`, ticketULID, limit)
 	if err != nil {
 		return nil, err
@@ -211,7 +215,7 @@ FROM ledger WHERE ticket_ulid=$1 ORDER BY id LIMIT $2`, ticketULID, limit)
 	var evs []LedgerEvent
 	for rows.Next() {
 		var e LedgerEvent
-		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Kind, &e.Payload); err != nil {
+		if err := rows.Scan(&e.ID, &e.ULID, &e.Ticket, &e.TS, &e.Actor, &e.ActorType, &e.Session, &e.Host, &e.Kind, &e.Payload); err != nil {
 			return nil, err
 		}
 		e.Class = EventClass(e.Kind)
@@ -290,6 +294,21 @@ ORDER BY r.last_activity DESC NULLS LAST`)
 	return arcs, rows.Err()
 }
 
+// AuthorsCap bounds ctx's authors list: the hook injects the aggregate, and
+// a long-lived ticket touched by many sessions must not grow it without
+// limit. authors_total carries the full count.
+const AuthorsCap = 10
+
+// authorsSQL groups a ticket's events (t) by author, newest author first.
+// An author is one (actor, host, session); system events are mechanical
+// and author nothing. Legacy rows (host NULL, session NULL or "") fold
+// into one author per actor.
+const authorsSQL = `SELECT l.actor, l.host, COALESCE(l.session,'') AS session,
+       min(l.ts) AS first_ts, max(l.ts) AS last_ts, count(*) AS n, max(l.id) AS last_id
+FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.actor_type<>'system'
+GROUP BY l.actor, l.host, COALESCE(l.session,'')
+ORDER BY max(l.id) DESC`
+
 // CtxRead returns the whole ticket aggregate as one JSON document — the
 // SessionStart-hook payload and the API's ctx read (W1).
 func (s *Store) CtxRead(ctx context.Context, ticketOrSlug string) ([]byte, error) {
@@ -335,6 +354,10 @@ SELECT jsonb_build_object(
              FROM ledger l WHERE l.ticket_ulid=t.ulid AND l.kind='review' ORDER BY l.id DESC LIMIT 1),
   'active_by', (SELECT l.actor FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
   'active_since', (SELECT l.ts FROM ledger l WHERE t.status='active' AND `+activeSetWhere+` ORDER BY l.id DESC LIMIT 1),
+  'authors', COALESCE((SELECT jsonb_agg(jsonb_build_object('actor',a.actor,'host',a.host,'session',a.session,
+                          'first_ts',a.first_ts,'last_ts',a.last_ts,'events',a.n) ORDER BY a.last_id DESC)
+                        FROM (`+authorsSQL+` LIMIT `+fmt.Sprint(AuthorsCap)+`) a), '[]'::jsonb),
+  'authors_total', (SELECT count(*) FROM (`+authorsSQL+`) a),
   'head', (SELECT max(id) FROM ledger WHERE ticket_ulid=t.ulid)
 ) FROM t`, ticket).Scan(&doc)
 	if errors.Is(err, pgx.ErrNoRows) {

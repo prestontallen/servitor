@@ -23,9 +23,12 @@ import (
 )
 
 func main() {
+	a := api.LocalAuthor(os.Getenv)
 	c := &api.HTTPClient{
-		Base:  envOr("SERVITOR_API", "http://localhost:8181"),
-		Actor: envOr("SERVITOR_ACTOR", "agent:cli"),
+		Base:    envOr("SERVITOR_API", "http://localhost:8181"),
+		Actor:   a.Actor,
+		Host:    a.Host,
+		Session: a.Session,
 	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, c, os.Getenv))
 }
@@ -105,7 +108,7 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		if cmd == "hook" {
 			dir, _ := os.Getwd()
-			preflight(out, dir, c.Actor, env("SERVITOR_AGENT"), doc)
+			preflight(out, dir, api.Author{Actor: c.Actor, Host: c.Host, Session: c.Session}, env("SERVITOR_AGENT"), doc)
 		}
 		if err != nil {
 			fmt.Fprintf(out, "servitor: unavailable (%v)\n", err) // one line, exit 0

@@ -337,6 +337,14 @@ func (h *HTTP) append(w http.ResponseWriter, r *http.Request) {
 	if a := r.Header.Get("X-Servitor-Actor"); a != "" {
 		cmd.Actor = a
 	}
+	// host and session travel the same way: the CLI stamps every write
+	// without each call site building them into the body
+	if v := r.Header.Get("X-Servitor-Host"); v != "" {
+		cmd.Host = v
+	}
+	if v := r.Header.Get("X-Servitor-Session"); v != "" {
+		cmd.Session = v
+	}
 	res, err := h.Service.Append(r.Context(), cmd)
 	if err != nil {
 		writeErr(w, err)

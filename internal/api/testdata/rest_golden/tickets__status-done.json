@@ -12,6 +12,7 @@
     "parent": null,
     "active_by": null,
     "active_since": null,
+    "active_host": null,
     "criteria_pass": 0,
     "criteria_total": 0
   }

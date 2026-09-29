@@ -76,6 +76,9 @@ type Server struct {
 	In      io.Reader
 	Out     io.Writer
 	Err     io.Writer // human-readable logs; never stdout (stdout is the protocol)
+	// Author stamps host (and a session when the caller sends none) on
+	// every append; the actor still comes from the tool call.
+	Author api.Author
 }
 
 // Serve reads JSON-RPC messages until EOF. Blocks; run in the foreground.
@@ -228,9 +231,14 @@ func (s *Server) callTool(ctx context.Context, name string, args json.RawMessage
 				p.Payload["ulid"] = ticket
 			}
 		}
+		// the server process runs on the writer's machine: it stamps
+		// the host, and the harness session when the caller sent none
+		if p.Session == "" {
+			p.Session = s.Author.Session
+		}
 		res, err := s.Service.Append(ctx, api.WriteCmd{
 			Ticket: ticket, Kind: p.Kind, Payload: p.Payload,
-			Actor: p.Actor, Session: p.Session,
+			Actor: p.Actor, Session: p.Session, Host: s.Author.Host,
 		})
 		if err != nil {
 			return "", err

@@ -158,6 +158,7 @@ func (ss *StoreService) Append(ctx context.Context, cmd WriteCmd) (AppendResult,
 		Actor:      cmd.Actor,
 		ActorType:  actorType,
 		Session:    cmd.Session,
+		Host:       cmd.Host,
 		Kind:       cmd.Kind,
 		Payload:    cmd.Payload,
 	}, expect)

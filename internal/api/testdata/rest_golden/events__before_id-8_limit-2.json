@@ -7,6 +7,7 @@
     "actor": "agent:test",
     "actor_type": "agent",
     "session": "",
+    "host": null,
     "kind": "status.set",
     "class": "transition",
     "payload": {
@@ -21,6 +22,7 @@
     "actor": "agent:test",
     "actor_type": "agent",
     "session": "",
+    "host": null,
     "kind": "field.set",
     "class": "transition",
     "payload": {

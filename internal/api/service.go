@@ -62,6 +62,7 @@ type WriteCmd struct {
 	Payload       map[string]any `json:"payload"`
 	Actor         string         `json:"actor"` // "human:preston" | "agent:<id>" | "system"
 	Session       string         `json:"session"`
+	Host          string         `json:"host"`
 	ExpectUpdated *time.Time     `json:"expect_updated"`
 }
 

@@ -22,6 +22,10 @@ type HTTPClient struct {
 	Base  string       // e.g. http://localhost:8181
 	HTTP  *http.Client // nil = default
 	Actor string       // attested actor, sent as X-Servitor-Actor
+	// Host and Session complete the author (see Author), sent as
+	// X-Servitor-Host and X-Servitor-Session.
+	Host    string
+	Session string
 }
 
 func (c *HTTPClient) do(ctx context.Context, method, path string, body any, out any) error {
@@ -44,6 +48,12 @@ func (c *HTTPClient) do(ctx context.Context, method, path string, body any, out 
 	}
 	if c.Actor != "" {
 		req.Header.Set("X-Servitor-Actor", c.Actor)
+	}
+	if c.Host != "" {
+		req.Header.Set("X-Servitor-Host", c.Host)
+	}
+	if c.Session != "" {
+		req.Header.Set("X-Servitor-Session", c.Session)
 	}
 	hc := c.HTTP
 	if hc == nil {

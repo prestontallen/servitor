@@ -58,6 +58,7 @@ type ComplexityRoot struct {
 		Actor     func(childComplexity int) int
 		ActorType func(childComplexity int) int
 		Class     func(childComplexity int) int
+		Host      func(childComplexity int) int
 		ID        func(childComplexity int) int
 		Kind      func(childComplexity int) int
 		Payload   func(childComplexity int) int
@@ -96,6 +97,7 @@ type ComplexityRoot struct {
 
 	Ticket struct {
 		ActiveBy      func(childComplexity int) int
+		ActiveHost    func(childComplexity int) int
 		ActiveSince   func(childComplexity int) int
 		Aggregate     func(childComplexity int) int
 		BlockedAt     func(childComplexity int) int
@@ -243,6 +245,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Event.Class(childComplexity), true
+	case "Event.host":
+		if e.ComplexityRoot.Event.Host == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Event.Host(childComplexity), true
 	case "Event.id":
 		if e.ComplexityRoot.Event.ID == nil {
 			break
@@ -407,6 +415,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Ticket.ActiveBy(childComplexity), true
+	case "Ticket.active_host":
+		if e.ComplexityRoot.Ticket.ActiveHost == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Ticket.ActiveHost(childComplexity), true
 	case "Ticket.active_since":
 		if e.ComplexityRoot.Ticket.ActiveSince == nil {
 			break
@@ -666,6 +680,8 @@ func (ec *executionContext) childFields_Event(ctx context.Context, field graphql
 		return ec.fieldContext_Event_actor_type(ctx, field)
 	case "session":
 		return ec.fieldContext_Event_session(ctx, field)
+	case "host":
+		return ec.fieldContext_Event_host(ctx, field)
 	case "kind":
 		return ec.fieldContext_Event_kind(ctx, field)
 	case "class":
@@ -740,6 +756,8 @@ func (ec *executionContext) childFields_Ticket(ctx context.Context, field graphq
 		return ec.fieldContext_Ticket_active_by(ctx, field)
 	case "active_since":
 		return ec.fieldContext_Ticket_active_since(ctx, field)
+	case "active_host":
+		return ec.fieldContext_Ticket_active_host(ctx, field)
 	case "criteria_pass":
 		return ec.fieldContext_Ticket_criteria_pass(ctx, field)
 	case "criteria_total":
@@ -1525,6 +1543,29 @@ func (ec *executionContext) _Event_session(ctx context.Context, field graphql.Co
 	)
 }
 func (ec *executionContext) fieldContext_Event_session(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Event", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Event_host(ctx context.Context, field graphql.CollectedField, obj *store.LedgerEvent) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Event_host(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Host, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Event_host(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Event", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -2435,6 +2476,29 @@ func (ec *executionContext) _Ticket_active_since(ctx context.Context, field grap
 }
 func (ec *executionContext) fieldContext_Ticket_active_since(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Ticket", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Ticket_active_host(ctx context.Context, field graphql.CollectedField, obj *store.Card) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Ticket_active_host(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ActiveHost, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Ticket_active_host(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Ticket", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Ticket_criteria_pass(ctx context.Context, field graphql.CollectedField, obj *store.Card) (ret graphql.Marshaler) {
@@ -3982,6 +4046,11 @@ func (ec *executionContext) _Event(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.RequiredNull {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "host":
+			out.Values[i] = ec._Event_host(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "kind":
 			out.Values[i] = ec._Event_kind(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -4489,6 +4558,11 @@ func (ec *executionContext) _Ticket(ctx context.Context, sel ast.SelectionSet, o
 			}
 		case "active_since":
 			out.Values[i] = ec._Ticket_active_since(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "active_host":
+			out.Values[i] = ec._Ticket_active_host(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
