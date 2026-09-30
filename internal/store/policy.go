@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -91,6 +92,18 @@ func ticketTier(ctx context.Context, tx pgx.Tx, ticket string) (int, error) {
 		return 0, ErrTierRequired
 	}
 	return tier, nil
+}
+
+// ValidTier reports whether v, as JSON, is a tier the store accepts. The
+// clients refuse a create without one before any write, with this same
+// rule, so the message names the flag rather than the store's code.
+func ValidTier(v any) bool {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return false
+	}
+	_, ok := parseTier(b)
+	return ok
 }
 
 // parseTier accepts the JSON texts 0, 1, 2, 3 and "0", "1", "2", "3", and

@@ -55,7 +55,7 @@ func tools() []tool {
 		},
 		{
 			Name:        "servitor_append",
-			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), flow.set (a diagram of the work, not the ticket: nodes:[{id,label,kind?}] with kind edge|service|store|queue|client|external|other, edges:[{from,to,label?,both?}] where label names what moves and both:true is a round trip — a whole-graph snapshot; each one is a new version and the ticket GUI renders the latest), subitem.add (kind,body,rank; ulid optional — minted when absent and returned as subitem_ulid, the handle subitem.set takes), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
+			Description: "Append one event to a ticket (the only write path). Kinds: ticket.create (payload: slug,title,rank,tier; tier 0..3 is required, a ticket cannot exist unclassified), status.set (status: queued|active|blocked|done|dropped; blocked requires on), field.set (field + v; omit v to make the field absent), gate (contract_approved requires a human: actor), decision (what, why), note (v), flow.set (a diagram of the work, not the ticket: nodes:[{id,label,kind?}] with kind edge|service|store|queue|client|external|other, edges:[{from,to,label?,both?}] where label names what moves and both:true is a round trip — a whole-graph snapshot; each one is a new version and the ticket GUI renders the latest), subitem.add (kind,body,rank; ulid optional — minted when absent and returned as subitem_ulid, the handle subitem.set takes), subitem.set (ulid prefix, body/state), subitem.rank (ulid prefix, rank). Unknown kinds are stored verbatim.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -222,7 +222,12 @@ func (s *Server) callTool(ctx context.Context, name string, args json.RawMessage
 		if err := json.Unmarshal(args, &p); err != nil {
 			return "", err
 		}
-		// ticket.create carries its own ULID in the payload
+		// ticket.create carries its own ULID in the payload, and must
+		// classify the ticket: the store validates a tier when present,
+		// the tool refuses a missing one before any write, as the CLI does
+		if p.Kind == "ticket.create" && !store.ValidTier(p.Payload["tier"]) {
+			return "", &api.APIError{Code: "tier_required", Message: "ticket.create needs tier 0..3 in its payload; a ticket cannot exist unclassified"}
+		}
 		ticket := p.Ticket
 		if ticket == "" && p.Kind == "ticket.create" {
 			ticket, _ = p.Payload["ulid"].(string)

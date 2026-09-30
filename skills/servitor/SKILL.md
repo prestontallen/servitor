@@ -56,7 +56,8 @@ only at install time, never once linked.
 ```
 servitor ctx [ref]     whole ticket aggregate JSON (hook). ALWAYS exits 0.
 servitor board         queued/active/blocked cards, rank-ordered
-servitor new --slug S [--title T] [--rank N]     -> prints ticket ULID
+servitor new --slug S --tier 0..3 [--title T] [--rank N]   -> prints ticket ULID
+                                       (--tier is required; refused without it)
 servitor set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
 servitor log <ref> <kind> [text]                 e.g. note; or any ledger kind
 servitor gate <ref> <contract_approved|presented|shipped>
@@ -88,7 +89,8 @@ record and not a convention parsed out of a note.
 
 `servitor_ctx(ref)`, `servitor_board()`, `servitor_history(ref, limit)`,
 `servitor_append(kind, payload, actor, ticket?)`. The append tool is the full
-write path; `ticket.create` generates the ticket ULID server-side. Domain
+write path; `ticket.create` generates the ticket ULID server-side and needs
+`tier` 0..3 in its payload, refused with `tier_required` without one. Domain
 violations surface as tool errors with stable codes:
 `stale_write`, `slug_claimed`, `blocked_requires_on`, `human_gate_required`,
 `gate_already_passed`, `ambiguous_prefix`, `unknown_ticket`, `no_live_slug`,
@@ -164,12 +166,14 @@ card must say where you are.
 
 ## Process
 
-Classify at intake and say so: set the tier as a field in the same command
-as the intake note, because the store reads it and refuses `active` and
-`head` without it (`tier_required`):
+Classify at intake and say so. A ticket is classified in the event that
+creates it: `servitor new` refuses without `--tier`, and the store reads
+the field and refuses `active` and `head` without it (`tier_required`).
+Reclassifying an existing ticket is `set tier=N`:
 
 ```
-servitor set <ref> tier=2 && servitor log <ref> note "Intake: tier 2, complexity medium. ..."
+servitor new --slug <slug> --tier 2 --title "..." && servitor log <slug> note "Intake: tier 2, complexity medium. ..."
+servitor set <ref> tier=1        # reclassify: downgrading mid-task is cheap
 ```
 
 - **Tier** decides how much process applies: 0 trivial (one obvious edit),
