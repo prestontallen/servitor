@@ -16,6 +16,8 @@ install.sh registers in the Hermes profile config.yaml.
 4. The `servitor-dev` skill covers demo targets (running service, staging
    database, or the long-lived dev database) and the schema
    migration order.
+5. The `concise-tone` skill is the voice for every reply and outbound text;
+   a servitor report uses `servitor-tone` instead when its register is on.
 
 Skills live in skills/ and install.sh links them into ~/.claude/skills and
 ~/.hermes/skills.

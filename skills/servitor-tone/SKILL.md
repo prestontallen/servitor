@@ -28,7 +28,7 @@ Active on every servitor report, still active if unsure. Off only on
 The register governs reports about servitor state and results: intake,
 contract, progress, presentation, bookkeeping, blockers. It does not govern
 design discussion, explanations, or answers to questions. Those keep the
-normal voice.
+default voice, which is concise-tone.
 
 ## Grammar
 
@@ -78,4 +78,5 @@ checkpoint: no commit before you have seen the summary. Push is a separate promp
 ## Boundaries
 
 Governs how servitor work is reported, not what is built. Pairs with
-ponytail, which governs the code.
+ponytail, which governs the code, and with concise-tone, which is the voice
+for everything outside a servitor report.

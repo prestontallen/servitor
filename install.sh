@@ -68,9 +68,10 @@ RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
 BINARIES=(servitor servitord servitor-mcp)
 
 # skills this version installs. The link loop and --check both read this list
-# so they can never disagree about what should be there. servitor-tone is
-# opt-in and deliberately outside it.
-SKILLS=(servitor servitor-dev ticket-flow servitor-plan servitor-review)
+# so they can never disagree about what should be there. concise-tone is the
+# default voice everywhere servitor-tone is not in force, so it is always on;
+# servitor-tone is opt-in and deliberately outside it.
+SKILLS=(servitor servitor-dev ticket-flow servitor-plan servitor-review concise-tone)
 
 # names from SKILLS that were not in the tree, collected by link_skill and
 # reported once at the end. A release older than this script is the usual
