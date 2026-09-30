@@ -96,9 +96,11 @@ servitor history <ref>    full event timeline
 Orient on `board`, classify at intake, log as you go, pass gates at
 handoffs, record blockers as `blocked --on <party>`. Never fake done.
 
-Agents carrying the optional `servitor-tone` skill (`--tone` at install)
-report in a fixed grammar — state, result, obstruction, one line each,
-`no change.` when there is none:
+The `concise-tone` skill, linked by default, is the voice for every reply and
+outbound text: lead with the point, cut ceremony. Agents also carrying the
+optional `servitor-tone` skill (`--tone` at install) report servitor state in
+a fixed grammar — state, result, obstruction, one line each, `no change.` when
+there is none:
 
 ```
 skill-link-verify · done · shipped
