@@ -136,7 +136,7 @@ echo "== forward-compat: the health check targets the managed daemon =="
 # healthy remote would vouch for a broken local install.
 api="$(PATH="${STUB}:${PATH}" HOME="${FAKE_HOME}" SERVITOR_API=http://elsewhere.invalid:9999 \
   SERVITOR_INSTALL_LIB=1 bash -c ". '${REPO}/install.sh'; svc_local_api")"
-check "ambient SERVITOR_API is ignored" "${api}" "http://127.0.0.1:8181"
+check "ambient SERVITOR_API is ignored" "${api}" "http://127.0.0.1:27182"
 
 echo
 echo "== seam: Linux is unaffected =="

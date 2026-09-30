@@ -5,7 +5,7 @@ deleted; corrections are new events. The store is the system of record.
 
 ## Components
 
-- `servitord` — HTTP API daemon (`:8181`). Stateless; the store is the only backend.
+- `servitord` — HTTP API daemon (`:27182`). Stateless; the store is the only backend.
 - `servitor` — CLI. Thin client: holds no state, applies no rules.
 - `servitor-mcp` — same Service exposed as MCP tools over stdio.
 - `web/` — Svelte GUI (read-only).
@@ -159,9 +159,9 @@ and fails the job on any skipped test.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `SERVITOR_API` | CLI target | `http://localhost:8181` |
+| `SERVITOR_API` | CLI target | `http://localhost:27182` |
 | `SERVITOR_DSN` | Postgres/Timescale DSN (daemon, MCP) | local `servitor` DB |
-| `SERVITOR_ADDR` | daemon listen address | `:8181` |
+| `SERVITOR_ADDR` | daemon listen address | `:27182` |
 | `SERVITOR_TOKEN` | bearer-token auth for the API | off |
 | `SERVITOR_ACTOR` | actor of record; overrides the derived one | derived: `agent:claude` under Claude Code, `agent:hermes` under Hermes, else `agent:cli` |
 | `SERVITOR_HOST` | host stamped on writes (containers) | short lowercased hostname |

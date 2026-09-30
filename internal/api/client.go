@@ -19,7 +19,7 @@ import (
 // CLI (and MCP server) are provably thin: they depend on Service and talk
 // HTTP, nothing more. All state lives server-side.
 type HTTPClient struct {
-	Base  string       // e.g. http://localhost:8181
+	Base  string       // e.g. http://localhost:27182
 	HTTP  *http.Client // nil = default
 	Actor string       // attested actor, sent as X-Servitor-Actor
 	// Host and Session complete the author (see Author), sent as

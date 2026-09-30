@@ -637,7 +637,7 @@ svc_local_api() {
       *)      addr="$(sed -n 's/^Environment=SERVITOR_ADDR=//p' "${f}" | head -1)" ;;
     esac
   fi
-  [ -n "${addr}" ] || addr=":8181"
+  [ -n "${addr}" ] || addr=":27182"
   # A listen address is not a dialable one: 0.0.0.0 and a bare :port mean
   # "every interface", which you reach over the loopback.
   case "${addr}" in

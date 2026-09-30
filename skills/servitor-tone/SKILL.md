@@ -70,7 +70,7 @@ Right:
 ```
 plan-review-events · active · checking
 done: contract, evidence and review events; Contract and Plan cards read them
-evidence: store 32, api 12, cli 3 pass in-container; web 29; staging :8191 ticket demo-plan-review
+evidence: store 32, api 12, cli 3 pass in-container; web 29; staging :27192 ticket demo-plan-review
 next: your read of the summary, then commit
 checkpoint: no commit before you have seen the summary. Push is a separate prompt.
 ```
