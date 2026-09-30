@@ -260,8 +260,9 @@ happens: `servitor set <ref> checkpoint=summary-seen` (then `commit-ok`,
 ## Environment
 
 `SERVITOR_API` (default http://localhost:27182), `SERVITOR_ACTOR`
-(derived from the harness: `agent:claude` / `agent:hermes`, `agent:cli`
-only with no harness; do not export it by hand), `SERVITOR_HOST`
+(derived from the harness: `agent:claude` / `agent:hermes` /
+`agent:cursor`, `agent:cli` only with no harness; do not export it by
+hand; Cursor writes carry no session id), `SERVITOR_HOST`
 (overrides the stamped hostname, for containers),
 `SERVITOR_HUMAN` (Preston), `SERVITOR_TICKET` (hook focus),
 `SERVITOR_DSN` (daemon/MCP only).

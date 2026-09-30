@@ -52,8 +52,13 @@ func cli(t *testing.T, svc api.Service, env map[string]string, args ...string) (
 	t.Helper()
 	srv := httptest.NewServer(api.NewHTTP(svc).Routes())
 	t.Cleanup(srv.Close)
-	base := srv.URL
-	return runWith(map[string]string{"SERVITOR_API": base}, args...)
+	merged := map[string]string{"SERVITOR_API": srv.URL}
+	for k, v := range env {
+		if k != "SERVITOR_API" {
+			merged[k] = v
+		}
+	}
+	return runWith(merged, args...)
 }
 
 func runWith(env map[string]string, args ...string) (string, int) {
@@ -319,7 +324,7 @@ func TestPreflightRegisterLine(t *testing.T) {
 	if strings.Contains(b.String(), "register:") {
 		t.Errorf("register line without the link:\n%s", b.String())
 	}
-	for _, root := range []string{".claude/skills", ".hermes/skills"} {
+	for _, root := range []string{".claude/skills", ".hermes/skills", ".cursor/skills"} {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		if err := os.MkdirAll(filepath.Join(home, root, "servitor-tone"), 0o755); err != nil {

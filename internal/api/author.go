@@ -19,9 +19,18 @@ type Author struct {
 // shell inherits CLAUDE_CODE_SESSION_ID, so its own id must win. The reverse
 // nesting (Claude Code started from a Hermes terminal) would be misread as
 // Hermes; revisit if that ever happens in practice.
-var harnesses = []struct{ sessionVar, actor string }{
-	{"HERMES_SESSION_ID", "agent:hermes"},
-	{"CLAUDE_CODE_SESSION_ID", "agent:claude"},
+//
+// Cursor comes last: CURSOR_AGENT marks the agent's shells but carries no
+// session (Cursor gives the conversation id to hook processes only), so any
+// real session var in the same environment — Claude Code run from Cursor's
+// terminal — must win. Its session stays "".
+var harnesses = []struct {
+	sessionVar, actor string
+	marker            bool // the var only marks the harness; its value is no session
+}{
+	{"HERMES_SESSION_ID", "agent:hermes", false},
+	{"CLAUDE_CODE_SESSION_ID", "agent:claude", false},
+	{"CURSOR_AGENT", "agent:cursor", true},
 }
 
 // LocalAuthor derives the author of writes from this process. SERVITOR_ACTOR
@@ -37,7 +46,10 @@ func LocalAuthor(env func(string) string) Author {
 	}
 	for _, h := range harnesses {
 		if s := env(h.sessionVar); s != "" {
-			a.Actor, a.Session = h.actor, s
+			a.Actor = h.actor
+			if !h.marker {
+				a.Session = s
+			}
 			break
 		}
 	}

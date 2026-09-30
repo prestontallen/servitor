@@ -17,10 +17,10 @@ import (
 )
 
 // toneInstalled reports whether install.sh linked the servitor-tone skill
-// into any agent skill root under home (Claude, Hermes). install.sh links
-// every detected root together, so one is as good as all.
+// into any agent skill root under home (Claude, Hermes, Cursor). install.sh
+// links every detected root together, so one is as good as all.
 func toneInstalled(home string) bool {
-	for _, root := range []string{".claude/skills", ".hermes/skills"} {
+	for _, root := range []string{".claude/skills", ".hermes/skills", ".cursor/skills"} {
 		if _, err := os.Stat(filepath.Join(home, root, "servitor-tone")); err == nil {
 			return true
 		}
