@@ -65,32 +65,50 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		// hanging API cannot eat the hook's budget; `hook` adds the preflight
 		// header, `ctx` stays pure JSON for scripts. `hook --hermes` wraps the
 		// same output in the Hermes pre_llm_call context-injection shape and
-		// speaks only on the session's first turn (cmd/servitor/hermeshook.go).
-		hermes := false
+		// speaks only on the session's first turn (cmd/servitor/hermeshook.go);
+		// `hook --cursor` wraps it as a Cursor sessionStart response
+		// (cmd/servitor/cursorhook.go).
+		mode := "" // "", "hermes" or "cursor"
 		var rest []string
 		for _, a := range args {
-			if a == "--hermes" && cmd == "hook" {
-				hermes = true
+			if cmd == "hook" && (a == "--hermes" || a == "--cursor") {
+				mode = strings.TrimPrefix(a, "--")
 				continue
 			}
 			rest = append(rest, a)
 		}
 		args = rest
-		if hermes && env("SERVITOR_ACTOR") == "" {
-			// the hook runs inside a Hermes session with no servitor env
+		if mode != "" && env("SERVITOR_ACTOR") == "" {
+			// the hook runs inside a harness session with no servitor env
 			// file sourced; the mode knows its agent. Keeping the command a
 			// bare absolute path (no `env` prefix) lets `hermes hooks
 			// doctor` resolve the first token and survives a gateway whose
 			// PATH lacks the local bin directory.
-			c.Actor = "agent:hermes"
+			c.Actor = "agent:" + mode
+		}
+		if mode == "cursor" {
+			// Cursor hands the conversation id to the hook alone, never to
+			// the agent's shells, so this is the only place it is known.
+			if s := cursorSession(hookStdin); s != "" {
+				c.Session = s
+			}
 		}
 		if c.HTTP == nil {
 			c.HTTP = &http.Client{Timeout: 3 * time.Second}
 		}
 		var out io.Writer = stdout
 		var hookBuf bytes.Buffer
-		if hermes {
+		if mode != "" {
 			out = &hookBuf
+		}
+		emit := func() int {
+			switch mode {
+			case "hermes":
+				return emitHermesContext(stdout, hookBuf.Bytes(), hookStdin)
+			case "cursor":
+				return emitCursorContext(stdout, hookBuf.Bytes())
+			}
+			return 0
 		}
 		ref := ""
 		if len(args) > 0 {
@@ -112,27 +130,18 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		if err != nil {
 			fmt.Fprintf(out, "servitor: unavailable (%v)\n", err) // one line, exit 0
-			if hermes {
-				return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
-			}
-			return 0
+			return emit()
 		}
 		if ref == "" {
 			fmt.Fprintf(out, "servitor: no focused ticket (set SERVITOR_TICKET). %d open card(s):\n", len(board))
 			for _, c := range board {
 				fmt.Fprintf(out, "  [%s] %s (%s)\n", c.Status, c.Slug, c.ULID[:8])
 			}
-			if hermes {
-				return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
-			}
-			return 0
+			return emit()
 		}
 		out.Write(doc)
 		fmt.Fprintln(out)
-		if hermes {
-			return emitHermesContext(stdout, hookBuf.Bytes(), os.Stdin)
-		}
-		return 0
+		return emit()
 
 	case "board":
 		cards, err := c.Board(ctx)
@@ -580,6 +589,9 @@ func usage(w io.Writer) {
   hook --hermes    the same output wrapped as a Hermes pre_llm_call shell-hook
                    response ({"context": ...} on the session's first turn;
                    silent otherwise). Reads the hook payload on stdin.
+  hook --cursor    the same output wrapped as a Cursor sessionStart hook
+                   response ({"additional_context": ...}). Reads the
+                   payload on stdin for the conversation id.
   ctx [ref]        whole ticket aggregate, JSON only. ALWAYS exits 0.
   board            queued/active/blocked cards
   list [--status S]... [--query Q] [--limit N]

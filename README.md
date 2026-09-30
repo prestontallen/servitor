@@ -77,6 +77,10 @@ servitor hook --hermes    the same output as a Hermes pre_llm_call context
                           injection (first turn only; reads the hook payload
                           on stdin); install.sh registers it in the Hermes
                           profile config.yaml
+servitor hook --cursor    the same output as a Cursor sessionStart hook
+                          response ({"additional_context": ...}; reads the
+                          payload on stdin for the conversation id);
+                          install.sh registers it in ~/.cursor/hooks.json
 servitor ctx [ref]        ticket aggregate, JSON only; always exits 0
 servitor board            queued/active/blocked, rank-ordered
 servitor arcs             arcs with derived rollups
@@ -163,13 +167,15 @@ and fails the job on any skipped test.
 | `SERVITOR_DSN` | Postgres/Timescale DSN (daemon, MCP) | local `servitor` DB |
 | `SERVITOR_ADDR` | daemon listen address | `:27182` |
 | `SERVITOR_TOKEN` | bearer-token auth for the API | off |
-| `SERVITOR_ACTOR` | actor of record; overrides the derived one | derived: `agent:claude` under Claude Code, `agent:hermes` under Hermes, else `agent:cli` |
+| `SERVITOR_ACTOR` | actor of record; overrides the derived one | derived: `agent:claude` under Claude Code, `agent:hermes` under Hermes, `agent:cursor` under Cursor, else `agent:cli` |
 | `SERVITOR_HOST` | host stamped on writes (containers) | short lowercased hostname |
 | `SERVITOR_TICKET` | hook focus ticket | — |
 
 Every write names its author: the actor, the host it came from, and the
 harness session (`CLAUDE_CODE_SESSION_ID` or `HERMES_SESSION_ID`, which the
-harness exports to every command). The CLI sends them as `X-Servitor-Host`
+harness exports to every command). Cursor exports only the `CURSOR_AGENT`
+marker to its shells, so writes from Cursor carry no session; the hook
+alone sees the conversation id. The CLI sends them as `X-Servitor-Host`
 and `X-Servitor-Session`; a write without them is accepted and reads back
 host `null`, session `""`. `servitor ctx` lists a ticket's `authors`
 (newest ten plus `authors_total`), and the hook prints one `handoff

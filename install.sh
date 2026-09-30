@@ -15,12 +15,14 @@
 # ~/Library/LaunchAgents), restarts servitord, and
 # links the servitor, servitor-dev, ticket-flow, servitor-plan and servitor-review skills into every
 # detected agent skill directory (Hermes: ~/.hermes/skills, Claude:
-# ~/.claude/skills), so skill edits are live immediately and binary edits
-# take effect after restart. On hosts with Claude Code it registers the
-# SessionStart hook (`servitor hook`) in ~/.claude/settings.json; on hosts
-# with Hermes it registers `servitor hook --hermes` as a pre_llm_call shell
-# hook in the Hermes profile config.yaml, so every new session of either
-# agent starts with the same orientation.
+# ~/.claude/skills, Cursor: ~/.cursor/skills), so skill edits are live
+# immediately and binary edits take effect after restart. On hosts with
+# Claude Code it registers the SessionStart hook (`servitor hook`) in
+# ~/.claude/settings.json; on hosts with Hermes it registers `servitor hook
+# --hermes` as a pre_llm_call shell hook in the Hermes profile config.yaml;
+# on hosts with Cursor it registers `servitor hook --cursor` as a
+# sessionStart hook in ~/.cursor/hooks.json, so every new session of any of
+# them starts with the same orientation.
 #
 # Usage: ./install.sh [--check] [--from-source] [--version TAG]
 #                     [--tone|--no-tone] [--dsn URL] [--token TOKEN]
@@ -76,11 +78,19 @@ SKILLS=(servitor servitor-dev ticket-flow servitor-plan servitor-review)
 # binaries and the service are installed and correct.
 SKIPPED_SKILLS=()
 
-# agent skill roots to try; each skill links to <root>/<name>
+# agent skill roots to try; each skill links to <root>/<name>. The Cursor
+# root is created by ensure_cursor_skill_root when ~/.cursor exists: a fresh
+# Cursor has none, and Cursor names it as the native root.
 SKILL_TARGETS=(
   "${HOME}/.hermes/skills"
   "${HOME}/.claude/skills"
+  "${HOME}/.cursor/skills"
 )
+
+ensure_cursor_skill_root() {
+  [ -d "${HOME}/.cursor" ] || return 0
+  [ -d "${HOME}/.cursor/skills" ] || mkdir -p "${HOME}/.cursor/skills"
+}
 
 skill_roots() {
   local root
@@ -460,6 +470,68 @@ install_hook_hermes() {
   hermes_hook check && return 0
   hermes_hook install && echo "==> Hermes pre_llm_call hook registered in ${HERMES_CONFIG}"
   echo "==> note: Hermes prompts once for hook consent on an interactive session; non-interactive runs (gateway, cron) need --accept-hooks or hooks_auto_accept in config.yaml"
+}
+
+# Cursor: the hook is a sessionStart entry in the user-level hooks.json
+# (cursor.com/docs/agent/hooks). sessionStart fires once per conversation and
+# its stdout's additional_context field is the injection point; the
+# conversation id arrives on stdin, so the actor and session are set inside
+# `hook --cursor`. Absolute path: Cursor spawns hooks with its own PATH.
+CURSOR_HOOKS="${HOME}/.cursor/hooks.json"
+CURSOR_HOOK_CMD="${BIN_DIR}/servitor hook --cursor"
+
+cursor_hook() {
+  # cursor_hook check|install: is the servitor sessionStart hook registered
+  # in ~/.cursor/hooks.json (exit 0/1)? install adds it, keeping other keys
+  # and hooks, and creates the file when there is none (Cursor does not
+  # generate one). The sad paths — unparsable JSON, a schema version other
+  # than 1, hooks: not an object — refuse with a message and change nothing.
+  python3 - "$1" "${CURSOR_HOOKS}" "${CURSOR_HOOK_CMD}" <<'PY'
+import json, os, sys
+
+mode, path, cmd = sys.argv[1:4]
+
+def refuse(msg):
+    # a file we cannot read is drift under check, and untouchable under install
+    if mode != "check":
+        print(f"ERROR: {msg}; not touching {path}", file=sys.stderr)
+    sys.exit(1)
+
+if os.path.exists(path):
+    try:
+        doc = json.load(open(path))
+    except ValueError as e:
+        refuse(f"{path} does not parse ({e})")
+else:
+    doc = {"version": 1, "hooks": {}}
+if not isinstance(doc, dict):
+    refuse(f"{path} is not a JSON object")
+version = doc.setdefault("version", 1)
+if version != 1:
+    refuse(f"{path} has schema version {version!r}; this script knows version 1")
+hooks = doc.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    refuse(f"the hooks key in {path} is not an object")
+entries = hooks.setdefault("sessionStart", [])
+if not isinstance(entries, list):
+    refuse(f"hooks.sessionStart in {path} is not an array")
+have = any(isinstance(h, dict) and h.get("command") == cmd for h in entries)
+if mode == "check" or have:
+    sys.exit(0 if have else 1)
+entries.append({"command": cmd, "timeout": 10})
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w") as f:
+    json.dump(doc, f, indent=2)
+    f.write("\n")
+PY
+}
+
+install_hook_cursor() {
+  # Cursor hosts only. Idempotent; the sad paths refuse (nonzero aborts the
+  # install under set -e, same as the drift check would).
+  [ -d "${HOME}/.cursor" ] || return 0
+  cursor_hook check && return 0
+  cursor_hook install && echo "==> Cursor sessionStart hook registered in ${CURSOR_HOOKS}"
 }
 
 build() {
@@ -1000,6 +1072,10 @@ check() {
       drift=1
     fi
   fi
+  if [ -d "${HOME}/.cursor" ] && ! cursor_hook check; then
+    echo "drift: no Cursor sessionStart hook running '${CURSOR_HOOK_CMD}' in ${CURSOR_HOOKS} (run install.sh)"
+    drift=1
+  fi
   if [ -f "${ENV_FILE}" ]; then
     local mode
     mode="$(stat_mode "${ENV_FILE}")"
@@ -1048,11 +1124,13 @@ fi
 # schema must be current before the daemon restarts onto it; use the file's
 # DSN (may have just been written by --dsn)
 apply_schema "$(env_value SERVITOR_DSN "${ENV_FILE}")"
+ensure_cursor_skill_root
 for s in "${SKILLS[@]}"; do link_skill "${s}"; done
 [ "${WANT_TONE}" -eq 1 ] && link_skill servitor-tone
 set_branch_template "${WANT_BRANCH_TEMPLATE:-}"
 install_hook
 install_hook_hermes
+install_hook_cursor
 restart
 wait_healthy
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
