@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -104,7 +105,7 @@ func TestMCPAppendToolAndStableErrors(t *testing.T) {
 	// create a second ticket via the append tool (payload.ulid form)
 	newID := store.NewULID()
 	resp := roundtrip(t, svc,
-		`{"id":1,"method":"tools/call","params":{"name":"servitor_append","arguments":{"kind":"ticket.create","payload":{"ulid":"`+newID+`","slug":"mcp-new"},"actor":"agent:claude"}}}`)
+		`{"id":1,"method":"tools/call","params":{"name":"servitor_append","arguments":{"kind":"ticket.create","payload":{"ulid":"`+newID+`","slug":"mcp-new","tier":1},"actor":"agent:claude"}}}`)
 	if len(resp) != 1 || strings.Contains(resp[0], `"error"`) {
 		t.Errorf("ticket.create via MCP failed: %v", resp)
 	}
@@ -126,5 +127,45 @@ func TestMCPAppendToolAndStableErrors(t *testing.T) {
 		`{"id":4,"method":"tools/call","params":{"name":"servitor_ctx","arguments":{"ref":"mcp-write"}}}`)
 	if !strings.Contains(resp[0], "from mcp") {
 		t.Errorf("note not in ctx: %s", resp[0])
+	}
+}
+
+// TestMCPCreateRequiresTier: the append tool refuses ticket.create without a
+// tier the store would accept, with the stable code and before any write;
+// with one, the ticket reads back classified.
+func TestMCPCreateRequiresTier(t *testing.T) {
+	svc := testService(t)
+	for i, payload := range []string{
+		`{"slug":"mcp-untiered"}`,
+		`{"slug":"mcp-untiered","tier":4}`,
+		`{"slug":"mcp-untiered","tier":"two"}`,
+		`{"slug":"mcp-untiered","tier":1.5}`,
+	} {
+		resp := roundtrip(t, svc,
+			`{"id":`+string(rune('1'+i))+`,"method":"tools/call","params":{"name":"servitor_append","arguments":{"kind":"ticket.create","payload":`+payload+`,"actor":"agent:claude"}}}`)
+		if len(resp) != 1 || !strings.Contains(resp[0], "tier_required") {
+			t.Fatalf("payload %s: want tier_required, got %v", payload, resp)
+		}
+	}
+	if _, err := svc.Ctx(context.Background(), "mcp-untiered"); err == nil {
+		t.Fatal("a ticket exists after refused creates")
+	}
+	resp := roundtrip(t, svc,
+		`{"id":9,"method":"tools/call","params":{"name":"servitor_append","arguments":{"kind":"ticket.create","payload":{"slug":"mcp-tiered","tier":"2"},"actor":"agent:claude"}}}`)
+	if len(resp) != 1 || strings.Contains(resp[0], `"error"`) {
+		t.Fatalf("create with tier failed: %v", resp)
+	}
+	raw, err := svc.Ctx(context.Background(), "mcp-tiered")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agg struct {
+		Fields map[string]any `json:"fields"`
+	}
+	if err := json.Unmarshal(raw, &agg); err != nil {
+		t.Fatal(err)
+	}
+	if got := agg.Fields["tier"]; got != "2" {
+		t.Fatalf("fields.tier after create with tier \"2\" = %#v, want \"2\"", got)
 	}
 }

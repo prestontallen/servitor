@@ -350,7 +350,11 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		return encode(stdout, evs)
 
 	case "new":
-		var slug, title string
+		// --tier is required: a ticket is classified in the event that
+		// creates it, so none exists unclassified (the store reads tier on
+		// active and head, and validates it here when present; the CLI
+		// refuses before any write so a missing one never reaches it)
+		var slug, title, tier string
 		rank := "0"
 		for i := 0; i < len(args); i += 2 {
 			if i+1 >= len(args) {
@@ -364,6 +368,8 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 				title = args[i+1]
 			case "--rank":
 				rank = args[i+1]
+			case "--tier":
+				tier = args[i+1]
 			default:
 				say("new: unknown flag %s", args[i])
 				return 2
@@ -373,10 +379,18 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 			say("new: --slug is required")
 			return 2
 		}
+		if tier == "" {
+			say("new: --tier 0..3 is required (0 trivial, 1 small, 2 feature, 3 major); a ticket cannot exist unclassified")
+			return 2
+		}
+		if !store.ValidTier(json.Number(tier)) {
+			say("new: --tier must be 0, 1, 2 or 3, not %q", tier)
+			return 2
+		}
 		res, err := c.Append(ctx, api.WriteCmd{
 			Kind:    "ticket.create",
 			Actor:   c.Actor,
-			Payload: map[string]any{"slug": slug, "title": title, "rank": json.Number(rank)},
+			Payload: map[string]any{"slug": slug, "title": title, "rank": json.Number(rank), "tier": json.Number(tier)},
 		})
 		if err != nil {
 			say("%v", err)
@@ -597,7 +611,8 @@ func usage(w io.Writer) {
   list [--status S]... [--query Q] [--limit N]
                                    all tickets incl. done/dropped (arcs too)
   arcs             arcs (tickets with members) with derived rollups
-  new --slug S [--title T] [--rank N]
+  new --slug S --tier 0..3 [--title T] [--rank N]
+                                   create a ticket, classified in the same event
   set <ref> [--status S [--on WHO]] [--pr V|-] [field=value ...]
   log <ref> <kind> [text]          note, or any ledger kind (JSON object = payload)
   add <ref> <criterion|plan|question|finding> <text>

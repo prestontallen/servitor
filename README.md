@@ -84,7 +84,9 @@ servitor hook --cursor    the same output as a Cursor sessionStart hook
 servitor ctx [ref]        ticket aggregate, JSON only; always exits 0
 servitor board            queued/active/blocked, rank-ordered
 servitor arcs             arcs with derived rollups
-servitor new --slug S     -> ticket ULID
+servitor new --slug S --tier 0..3
+                          -> ticket ULID; the tier rides in the create event,
+                          so no ticket exists unclassified
 servitor set <ref> ...    status / PR / free field=value pairs
 servitor log <ref> note   append an event
 servitor gate <ref> <g>   pass a gate
