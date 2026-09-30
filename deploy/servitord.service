@@ -10,7 +10,7 @@ ExecStart=%h/.local/bin/servitord
 # The leading '-' keeps the unit startable when the file doesn't exist yet
 # (servitord then falls back to its built-in localhost DSN).
 EnvironmentFile=-%h/.config/servitor/servitord.env
-Environment=SERVITOR_ADDR=0.0.0.0:8181
+Environment=SERVITOR_ADDR=0.0.0.0:27182
 Restart=on-failure
 RestartSec=3
 

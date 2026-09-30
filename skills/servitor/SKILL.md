@@ -259,7 +259,7 @@ happens: `servitor set <ref> checkpoint=summary-seen` (then `commit-ok`,
 
 ## Environment
 
-`SERVITOR_API` (default http://localhost:8181), `SERVITOR_ACTOR`
+`SERVITOR_API` (default http://localhost:27182), `SERVITOR_ACTOR`
 (derived from the harness: `agent:claude` / `agent:hermes`, `agent:cli`
 only with no harness; do not export it by hand), `SERVITOR_HOST`
 (overrides the stamped hostname, for containers),
@@ -271,5 +271,5 @@ only with no harness; do not export it by hand), `SERVITOR_HOST`
 1. Never write to the database or read-model files directly; the read model
    is projection-only and the ledger is append-only — the store enforces it.
 2. Never claim human approval that didn't happen.
-3. The GUI (port 8181) is read-only for now; all writes via CLI/MCP/API.
+3. The GUI (port 27182) is read-only for now; all writes via CLI/MCP/API.
 4. One actor of record per event — don't forge sessions.

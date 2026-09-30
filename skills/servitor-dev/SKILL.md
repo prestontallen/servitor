@@ -5,13 +5,13 @@ description: Servitor repo dev process — which target a change is demonstrated
 
 # Servitor dev process: demo targets, staging, schema discipline
 
-The production ledger (`servitor` database, `servitord.service` on :8181)
+The production ledger (`servitor` database, `servitord.service` on :27182)
 is the system of record. Agents never connect to its database. Where a
 change is demonstrated depends on what the change touches:
 
 | Change touches | Demo target | Database |
 |---|---|---|
-| `web/` only (GUI) | the running service on :8181, through Vite's proxy | none |
+| `web/` only (GUI) | the running service on :27182, through Vite's proxy | none |
 | `cmd/`, `internal/` (daemon, CLI, MCP, API) | the worktree's built daemon | per-worktree staging DB, seeded from prod |
 | the schema (`apply-schema` migrations) | the worktree's built daemon | the long-lived dev database `servitor_dev` |
 
@@ -30,10 +30,10 @@ npm ci
 npx vite --port <worktree-port> --strictPort
 ```
 
-`vite.config.js` proxies `/api` to `http://localhost:8181`, so the new
+`vite.config.js` proxies `/api` to `http://localhost:27182`, so the new
 GUI reads the real ledger. Demo URL: `http://localhost:<port>/#/...`.
 Teardown is killing Vite. The built GUI is embedded into the daemon at
-build time, so the change reaches :8181 only after merge and redeploy.
+build time, so the change reaches :27182 only after merge and redeploy.
 
 ## Binary changes: per-worktree staging database
 

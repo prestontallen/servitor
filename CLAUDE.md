@@ -1,6 +1,6 @@
 # Servitor — agent orientation
 
-This repo is managed by servitor (worklog/task system, daemon on :8181).
+This repo is managed by servitor (worklog/task system, daemon on :27182).
 A SessionStart hook runs `servitor hook` at the start of every Claude
 session: where you are, whether to create a worktree, who holds the
 focused card, then the ticket. Hermes sessions get the same output

@@ -25,7 +25,7 @@ import (
 func main() {
 	a := api.LocalAuthor(os.Getenv)
 	c := &api.HTTPClient{
-		Base:    envOr("SERVITOR_API", "http://localhost:8181"),
+		Base:    envOr("SERVITOR_API", "http://localhost:27182"),
 		Actor:   a.Actor,
 		Host:    a.Host,
 		Session: a.Session,
@@ -598,7 +598,7 @@ func usage(w io.Writer) {
   gate <ref> <gate>                contract_approved requires SERVITOR_HUMAN
   history <ref>                    full event timeline
 
-env: SERVITOR_API (default http://localhost:8181), SERVITOR_ACTOR (default agent:cli),
+env: SERVITOR_API (default http://localhost:27182), SERVITOR_ACTOR (default agent:cli),
      SERVITOR_AGENT (hint wording override; the actor name otherwise),
      SERVITOR_HUMAN (your human id, for gates), SERVITOR_TICKET (hook focus)
 `)

@@ -27,7 +27,7 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>set -a; [ -f "$HOME/.config/servitor/servitord.env" ] &amp;&amp; . "$HOME/.config/servitor/servitord.env"; SERVITOR_ADDR=0.0.0.0:8181; set +a; exec "$HOME/.local/bin/servitord"</string>
+    <string>set -a; [ -f "$HOME/.config/servitor/servitord.env" ] &amp;&amp; . "$HOME/.config/servitor/servitord.env"; SERVITOR_ADDR=0.0.0.0:27182; set +a; exec "$HOME/.local/bin/servitord"</string>
   </array>
 
   <key>RunAtLoad</key>

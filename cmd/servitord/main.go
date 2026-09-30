@@ -33,7 +33,7 @@ Usage:
 
 Environment:
   SERVITOR_DSN     Postgres/TimescaleDB DSN         (default: local servitor DB)
-  SERVITOR_ADDR    listen address                   (default: :8181)
+  SERVITOR_ADDR    listen address                   (default: :27182)
   SERVITOR_TOKEN   bearer token for the API         (default: off, no auth)
 `)
 }
@@ -77,7 +77,7 @@ func main() {
 	dsn := dsnFromEnv()
 	addr := os.Getenv("SERVITOR_ADDR")
 	if addr == "" {
-		addr = ":8181"
+		addr = ":27182"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
