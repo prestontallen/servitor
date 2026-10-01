@@ -69,6 +69,7 @@ servitor add <ref> criterion "when X, then Y — verified by Z"
 servitor add <ref> plan "step N: .."      # risk order: the step that could kill the design first
 servitor decide <ref> "<what>" --why "<why>"
 servitor add <ref> question "..."
+servitor answer <ref> <question-prefix> "..."   # when the repo or the human answers it
 ```
 
 Then one line per write in the reply and the gate request:

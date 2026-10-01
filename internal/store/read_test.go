@@ -132,3 +132,44 @@ func TestCtxReadWholeAggregate(t *testing.T) {
 		t.Error("ctx-read of unknown ticket succeeded")
 	}
 }
+
+// TestCtxReadQuestionState: a question subitem's state is its answer. The
+// aggregate must carry it, null until answered, or the GUI shows every
+// question open forever (seen 2026-10-01 on valheim-sqol: three answered,
+// card said three open).
+func TestCtxReadQuestionState(t *testing.T) {
+	s := testDB(t)
+	ctx := context.Background()
+	id := newTicket(t, s, "ctx-question-state")
+	open := addSubitem(t, s, id, "question", "git init first?")
+	answered := addSubitem(t, s, id, "question", "which modules?")
+	mustAppend(t, s, evt(id, "subitem.set", map[string]any{"ulid": answered[:12], "state": "AutoStore and JustSleep"}))
+
+	doc, err := s.CtxRead(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Questions []struct {
+			ULID  string  `json:"ulid"`
+			Body  string  `json:"body"`
+			State *string `json:"state"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(doc, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Questions) != 2 {
+		t.Fatalf("questions = %+v, want 2", m.Questions)
+	}
+	byULID := map[string]*string{}
+	for _, q := range m.Questions {
+		byULID[q.ULID] = q.State
+	}
+	if got := byULID[open]; got != nil {
+		t.Errorf("open question state = %q, want null", *got)
+	}
+	if got := byULID[answered]; got == nil || *got != "AutoStore and JustSleep" {
+		t.Errorf("answered question state = %v, want the answer text", got)
+	}
+}

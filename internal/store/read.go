@@ -340,7 +340,7 @@ SELECT jsonb_build_object(
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='note'), '[]'::jsonb),
   'links', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'url',s.state) ORDER BY s.created_at, s.ulid)
                       FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='link'), '[]'::jsonb),
-  'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body) ORDER BY s.created_at, s.ulid)
+  'questions', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.created_at, s.ulid)
                           FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='question'), '[]'::jsonb),
   'findings', COALESCE((SELECT jsonb_agg(jsonb_build_object('ulid',s.ulid,'body',s.body,'state',s.state) ORDER BY s.rank, s.created_at, s.ulid)
                          FROM subitems s WHERE s.ticket_ulid=t.ulid AND s.kind='finding'), '[]'::jsonb),

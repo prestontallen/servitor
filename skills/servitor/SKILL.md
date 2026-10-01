@@ -66,6 +66,8 @@ servitor feedback [--since DATE] [--source human|self] [--limit N]
                                        feedback events across all tickets
 servitor add <ref> criterion|plan|question <text>   -> subitem
 servitor subitem <ref> <prefix> --state pass|fail --evidence "<how proven>"
+servitor answer <ref> <question-prefix> <text>     closes the question by identity
+                                       (SERVITOR_ACTOR=human:<name> when the human answered)
 servitor log <ref> contract '{"intent":..,"in":[..],"out":[..],"verification":..,"risks":..}'
 servitor log <ref> review   '{"verdict":"present|hold","summary":..,"findings":[..]}'
 ```
@@ -223,7 +225,14 @@ servitor add <ref> criterion "when X, then Y — verified by Z"
 servitor add <ref> plan "step 1: ..."
 servitor subitem <ref> <ulid-prefix> --state pass|fail     # at presentation
 servitor decide <ref> "<what>" --why "<why>"               # a real tradeoff
+servitor answer <ref> <question-prefix> "<text>"           # closes that question, not the latest one
 ```
+
+A question is answered when its answer is written on it: `servitor answer`
+puts the text in the question's state, and the Questions card reads who and
+when from that event. An answer the human gave is recorded with
+`SERVITOR_ACTOR=human:<name>` on the call. Never log an answer as a free
+note; the card cannot bind it and the question stays open forever.
 
 The intake note still carries tier, complexity and intent; the criteria
 carry the scorecard.

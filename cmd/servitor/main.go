@@ -212,6 +212,27 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		fmt.Fprintln(stdout, res.SubitemULID)
 		return 0
 
+	case "answer":
+		// servitor answer <ref> <question-prefix> <text...>
+		// sugar over subitem.set: the answer is the question's state, so the
+		// row closes by identity and the event carries who answered and when.
+		if len(args) < 3 {
+			say("answer: need <ref> <question-prefix> <text>")
+			return 2
+		}
+		res, err := c.Append(ctx, api.WriteCmd{
+			Ticket:  args[0],
+			Kind:    "subitem.set",
+			Actor:   c.Actor,
+			Payload: map[string]any{"ulid": args[1], "state": strings.Join(args[2:], " ")},
+		})
+		if err != nil {
+			say("%v", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, res.EventID)
+		return 0
+
 	case "decide":
 		// servitor decide <ref> <what> --why <why>
 		ref, what := args[0], ""
@@ -618,6 +639,9 @@ func usage(w io.Writer) {
   add <ref> <criterion|plan|question|finding> <text>
                                    append a subitem (subitem.add); prints its ULID
   decide <ref> <what> --why <why>  record a decision subitem
+  answer <ref> <prefix> <text>     answer a question subitem by ULID prefix: subitem.set
+                                   with state=text. SERVITOR_ACTOR=human:<name> when
+                                   the human answered.
   subitem <ref> <prefix> [--body B] [--state S] [--rank N]
                                    update/reorder a subitem by ULID prefix
   feedback [--since DATE] [--source human|self] [--limit N]

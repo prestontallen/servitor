@@ -94,6 +94,52 @@ test('questions are intervals: open until an ANSWER: note, with open-for time', 
   assert.equal(q.items[1].openFor, 1 * 3600 * 1000);
 });
 
+test('question subitems: state is the answer; who and when come from the subitem.set event, asked from the add', () => {
+  const qa = '01QA0000000000000000000000', qb = '01QB0000000000000000000000', qc = '01QC0000000000000000000000';
+  const doc = { ...bare, questions: [
+    { ulid: qa, body: 'which modules?', state: 'AutoStore and JustSleep' },
+    { ulid: qb, body: 'git init first?', state: null },
+    { ulid: qc, body: 'answered before the event existed', state: 'yes' }
+  ] };
+  const h = [
+    ev('subitem.add', { ulid: qa, kind: 'question', body: 'which modules?' }, { ts: ts(1) }),
+    ev('subitem.add', { ulid: qb, kind: 'question', body: 'git init first?' }, { ts: ts(2), actor: 'agent:claude' }),
+    ev('subitem.add', { ulid: qc, kind: 'question', body: 'answered before the event existed' }, { ts: ts(3) }),
+    // a body edit on the answered question must not be mistaken for the answer
+    ev('subitem.set', { ulid: qa.slice(0, 12), body: 'which ServersideQoL modules?' }, { ts: ts(4) }),
+    ev('subitem.set', { ulid: qa.slice(0, 12), state: 'AutoStore and JustSleep' }, { ts: ts(5), actor: 'human:preston', actor_type: 'human' })
+  ];
+  const q = buildDossier(doc, h, new Date(ts(6)).getTime()).questions;
+  assert.equal(q.source, 'question subitems');
+  assert.equal(q.open, 1);
+  // answered by identity: the set event with a state, not the body edit, not recency
+  assert.equal(q.items[0].answer.body, 'AutoStore and JustSleep');
+  assert.equal(q.items[0].answer.actor, 'human:preston');
+  assert.equal(q.items[0].answer.ts, ts(5));
+  assert.equal(q.items[0].openFor, 4 * 3600 * 1000, 'asked at the add, answered at the set');
+  // still open: asked when and by whom, open-for runs to now
+  assert.equal(q.items[1].answer, null);
+  assert.equal(q.items[1].actor, 'agent:claude');
+  assert.equal(q.items[1].openFor, 4 * 3600 * 1000);
+  // state with no matching event: answered, unsigned, no duration — never open, never a crash
+  assert.equal(q.items[2].answer.body, 'yes');
+  assert.equal(q.items[2].answer.actor, null);
+  assert.equal(q.items[2].openFor, null);
+  // the answering event is marked as consumed by the card, the body edit is not
+  assert.ok(q.fed.includes(h[4].id));
+  assert.ok(!q.fed.includes(h[3].id));
+});
+
+test('an ANSWER: note still falls back to the latest open question, skipping ones already answered by state', () => {
+  const qa = '01QA0000000000000000000000', qb = '01QB0000000000000000000000';
+  const doc = { ...bare, questions: [{ ulid: qa, body: 'first', state: null }, { ulid: qb, body: 'second', state: 'by identity' }] };
+  const q = buildDossier(doc, [note('ANSWER: the fallback', { ts: ts(3) })]).questions;
+  assert.equal(q.items[0].answer.body, 'the fallback');
+  assert.equal(q.items[1].answer.body, 'by identity');
+  assert.equal(q.open, 0);
+  assert.equal(q.source, 'question subitems');
+});
+
 test('feedback tallies by tag and source; corrections find the note they amend; fed ids are marked', () => {
   const h = [
     note('Checked from Iron Deck: repo clean, worktrees empty, question about uncommitted worktree stays open'),
