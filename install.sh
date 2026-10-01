@@ -56,6 +56,12 @@ PLIST="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
 OS="$(uname -s)"
 ENV_FILE="${HOME}/.config/servitor/servitord.env"
 ENV_DIR="${HOME}/.config/servitor"
+
+interactive() {
+  # whether prompting is possible. One function, not six tty tests, so a test
+  # can drive the prompt flows from a pipe by overriding it.
+  [ -t 0 ]
+}
 CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
 HOOK_CMD="servitor hook"
 MODE_FILE="${ENV_DIR}/install-mode"
@@ -219,7 +225,7 @@ done
 # or we're not interactive (non-tty defaults to no)
 # SERVITOR_INSTALL_LIB is excluded: sourcing this file to reuse its functions
 # must not prompt, or the prompt eats the caller's stdin.
-if [ "${WANT_TONE}" -eq 0 ] && [ "${TONE_ASKED:-0}" -eq 0 ] && [ -t 0 ] \
+if [ "${WANT_TONE}" -eq 0 ] && [ "${TONE_ASKED:-0}" -eq 0 ] && interactive \
   && [ -z "${SERVITOR_INSTALL_LIB:-}" ]; then
   printf "link the optional servitor-tone skill? [y/N] "
   read -r answer
@@ -262,7 +268,7 @@ set_branch_template() {
 
 # ask for a branch template only when interactive, not checking, and none is
 # set yet: an upgrade must not re-ask, and git config is where it is changed
-if [ "${BRANCH_ASKED:-0}" -eq 0 ] && [ "${WANT_CHECK:-0}" -eq 0 ] && [ -t 0 ] \
+if [ "${BRANCH_ASKED:-0}" -eq 0 ] && [ "${WANT_CHECK:-0}" -eq 0 ] && interactive \
   && [ -z "${SERVITOR_INSTALL_LIB:-}" ] && command -v git >/dev/null 2>&1 \
   && [ -z "$(git config --global --get servitor.branchTemplate || true)" ]; then
   WANT_BRANCH_TEMPLATE="$(choose_branch_template)"
@@ -817,6 +823,31 @@ docker_bootstrap_failed() {
   docker rm -f servitor-db >/dev/null 2>&1 || true
 }
 
+docker_bootstrap_abort() {
+  # The user chose docker and it did not happen. Falling back to the localhost
+  # DSN here would write an env file and install a service pointed at nothing,
+  # then fail at apply-schema with a hint about a database that "moved" — and
+  # the env file would suppress these prompts on the rerun. Stop instead.
+  #
+  # The named volume is deliberately left alone: docker rm only undoes what
+  # this run created, and servitor-db-data may predate it and hold a ledger.
+  echo "ERROR: the local docker database was not set up; the install stopped here." >&2
+  echo "       The servitor-db container was removed; the servitor-db-data volume was kept" >&2
+  echo "       (a rerun reuses it; docker volume rm servitor-db-data for a clean start)." >&2
+  echo "       Fix the cause above and rerun ./install.sh, or point at a database with --dsn." >&2
+  exit 1
+}
+
+docker_dsn() {
+  # ask_docker_dsn with its two failures told apart: a decline (1) leaves the
+  # DSN empty for the caller's fallback; a failed bootstrap (2) ends the run.
+  # The abort has to happen here, in the caller's shell: ask_docker_dsn runs
+  # inside a command substitution, where an exit only ends the subshell.
+  local rc=0
+  dsn="$(ask_docker_dsn)" || rc=$?
+  [ "${rc}" -ne 2 ] || docker_bootstrap_abort
+}
+
 ask_docker_dsn() {
   # interactive fallback: start a throwaway TimescaleDB container locally
   # prompts and progress go to stderr: stdout is captured as the DSN
@@ -867,13 +898,20 @@ ask_docker_dsn() {
     || { echo "ERROR: docker run failed (is port 5432 already in use?)" >&2; return 1; }
 
   echo "==> waiting for postgres inside servitor-db" >&2
+  # On an empty volume the entrypoint runs TWO servers: a temporary one on the
+  # unix socket only, while initdb and its hooks run, then the real one. A
+  # socket probe passes during the first, and the bootstrap below then lands
+  # in the gap as it shuts down ("the database system is shutting down" — a
+  # real install log). Only the final server listens on TCP, so probe that,
+  # and talk to it over TCP too. 60 polls, not 30: this now waits through
+  # initdb, which a cold pull on a laptop can stretch past half a minute.
   local i
-  for i in $(seq 1 30); do
-    docker exec servitor-db pg_isready -U postgres >/dev/null 2>&1 && break
+  for i in $(seq 1 60); do
+    docker exec servitor-db pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec servitor-db pg_isready -U postgres >/dev/null 2>&1 \
-    || { echo "ERROR: container postgres never became ready" >&2; return 1; }
+  docker exec servitor-db pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 \
+    || { echo "ERROR: container postgres never became ready" >&2; docker_bootstrap_failed; return 2; }
 
   # Ordinary Postgres bootstrap in the ordinary order: create the role, give it
   # the database, let it create its own schema. deploy/grants.sql exists to
@@ -889,20 +927,23 @@ ask_docker_dsn() {
   # with -c the variable arrives at the server verbatim and is a syntax error.
   # Interpolation is what keeps the password out of the statement text and
   # correctly quoted whatever characters it contains.
+  #
+  # Every failure past `docker run` returns 2: the user chose docker and it
+  # did not happen, which the caller must not confuse with a decline (1).
   printf "CREATE ROLE servitor LOGIN PASSWORD :'pw';\n" \
     | docker exec -i -e PGOPTIONS=--client-min-messages=warning servitor-db \
-        psql -v ON_ERROR_STOP=1 -v pw="${pw}" -U postgres -q >&2 \
-    || { echo "ERROR: could not create the servitor role" >&2; docker_bootstrap_failed; return 1; }
-  docker exec -i servitor-db psql -v ON_ERROR_STOP=1 -U postgres -q \
+        psql -v ON_ERROR_STOP=1 -v pw="${pw}" -h 127.0.0.1 -U postgres -q >&2 \
+    || { echo "ERROR: could not create the servitor role" >&2; docker_bootstrap_failed; return 2; }
+  docker exec -i servitor-db psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -q \
     -c "CREATE DATABASE servitor OWNER servitor" >&2 \
-    || { echo "ERROR: could not create the servitor database" >&2; docker_bootstrap_failed; return 1; }
+    || { echo "ERROR: could not create the servitor database" >&2; docker_bootstrap_failed; return 2; }
   # CREATE EXTENSION must be the superuser, and TimescaleDB's own functions are
   # meant to stay owned by postgres. From PostgreSQL 15 the public schema
   # belongs to pg_database_owner, so owning the database is already what lets
   # servitor create in it — no ALTER SCHEMA required.
-  docker exec -i servitor-db psql -v ON_ERROR_STOP=1 -U postgres -d servitor -q \
+  docker exec -i servitor-db psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d servitor -q \
     -c "CREATE EXTENSION IF NOT EXISTS timescaledb" >&2 \
-    || { echo "ERROR: could not enable the timescaledb extension" >&2; docker_bootstrap_failed; return 1; }
+    || { echo "ERROR: could not enable the timescaledb extension" >&2; docker_bootstrap_failed; return 2; }
 
   printf 'postgres://%slocalhost:5432/servitor?sslmode=disable' "$(userinfo servitor "${pw}")"
 }
@@ -950,7 +991,7 @@ dsn_reachable() {
 
 ensure_env_file() {
   local dsn token="" existing_token=""
-  if [ "${WANT_RECONFIGURE}" -eq 1 ] && [ ! -t 0 ]; then
+  if [ "${WANT_RECONFIGURE}" -eq 1 ] && ! interactive; then
     # Silently keeping the old DSN here would be the worst answer: the flag
     # exists precisely because the caller wants a different one.
     echo "ERROR: --reconfigure needs a terminal to prompt on; pass --dsn instead." >&2
@@ -969,7 +1010,7 @@ ensure_env_file() {
         # apply-schema failure with the prompts sitting unused right here.
         echo "WARNING: nothing is listening at $(dsn_hostport "${existing}"), the address in" >&2
         echo "         ${ENV_FILE}. The database has probably moved." >&2
-        if [ ! -t 0 ]; then
+        if ! interactive; then
           echo "ERROR: cannot prompt (non-interactive). Re-point it with:" >&2
           echo "         ./install.sh --dsn 'postgres://user:pass@host:port/servitor?sslmode=disable'" >&2
           exit 1
@@ -984,11 +1025,11 @@ ensure_env_file() {
   fi
   if [ -n "${WANT_DSN}" ]; then
     dsn="${WANT_DSN}"
-  elif [ -f "${ENV_FILE}" ] && [ -t 0 ] \
+  elif [ -f "${ENV_FILE}" ] && interactive \
     && { [ "${WANT_RECONFIGURE}" -eq 1 ] || [ "${DSN_UNREACHABLE:-0}" -eq 1 ]; }; then
     # re-point an install whose database moved (or was asked for explicitly)
     dsn="$(ask_existing_dsn || true)"
-    [ -n "${dsn}" ] || dsn="$(ask_docker_dsn || true)"
+    [ -n "${dsn}" ] || docker_dsn
     if [ -z "${dsn}" ]; then
       dsn="$(env_value SERVITOR_DSN "${ENV_FILE}")"
       echo "WARNING: nothing chosen — keeping the DSN already in ${ENV_FILE}." >&2
@@ -997,10 +1038,10 @@ ensure_env_file() {
     dsn="$(env_value SERVITOR_DSN "${ENV_FILE}")"
   elif dsn="$(current_unit_dsn)"; then
     echo "==> migrating existing unit DSN into ${ENV_FILE}"
-  elif [ -t 0 ]; then
+  elif interactive; then
     # fresh interactive install: existing db first, docker fallback, warn
     dsn="$(ask_existing_dsn || true)"
-    [ -n "${dsn}" ] || dsn="$(ask_docker_dsn || true)"
+    [ -n "${dsn}" ] || docker_dsn
     if [ -z "${dsn}" ]; then
       echo "WARNING: no database configured — falling back to postgres://localhost:5432/servitor?sslmode=disable; servitord will not start without a database there." >&2
       dsn="postgres://localhost:5432/servitor?sslmode=disable"
