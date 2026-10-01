@@ -47,6 +47,28 @@ servitor subitem <ref> <criterion-prefix> --state fail --evidence "board card sh
 `criteria[].evidence` in `servitor ctx`. The Contract card prints it beside
 the check. Omitting it is allowed; the card then shows only who and when.
 
+## question answer (subitem.set)
+
+A question subitem is answered when its state holds the answer. The verb is
+sugar over `subitem.set`, addressed by the question's ULID prefix:
+
+```
+servitor answer <ref> <question-prefix> "AutoStore and JustSleep"
+SERVITOR_ACTOR=human:preston servitor answer <ref> <question-prefix> "do not git init; the backup is the rollback"
+```
+
+`servitor ctx` exposes it as `questions[].state` (null while open). The
+Questions card shows the answer and takes who answered and when from the
+`subitem.set` event that wrote it, and the asked time from the question's
+`subitem.add`, the same way plan steps and criteria are dated. The actor
+is whoever ran the call: an agent closing a question from the repo is
+recorded as the agent, a human answer rides on `SERVITOR_ACTOR`. The store
+does not require a human here.
+
+An `ANSWER:` note still closes the newest open question for tickets that
+predate the verb. That binding is by recency, not identity, so it is the
+fallback and never the way to record a new answer.
+
 ## finding (subitem)
 
 One subitem per review finding, so each can be closed by identity later.

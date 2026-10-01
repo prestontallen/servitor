@@ -17,6 +17,8 @@
 //   "CORRECTION: ..."                                                -> corrections
 //   "... open question ..." / "Question: ..."                        -> questions
 //   "ANSWER: ..."                                                    -> answers the latest open question
+//   question subitems: state is the answer; who and when come from the
+//   subitem.set event that wrote it, asked from the subitem.add (by ulid)
 
 // Flowcharts come from the flow lib: foldFlow picks and validates the
 // latest flow.set snapshot. Imported here so buildDossier is the one place
@@ -181,11 +183,21 @@ export function decisions(doc, history, ns) {
 
 const Q_SENTENCE = /open question[^.?\n]*[.?]?/i;
 
-export function questions(doc, ns, now = Date.now(), consumed = new Set()) {
-  const items = (doc.questions || []).map((q) => ({
-    body: q.body, ts: null, actor: null, via: 'subitem',
-    answer: q.state ? { body: q.state, ts: null, actor: null } : null
-  }));
+export function questions(doc, history, ns, now = Date.now(), consumed = new Set()) {
+  // a question subitem is answered when its state holds the answer; the
+  // ledger event that wrote the state says who and when, the add says when
+  // it was asked. Same shape plan() and contract() use for their rows.
+  const adds = history.filter((e) => e.kind === 'subitem.add' && e.payload?.kind === 'question').sort(byId);
+  const sets = history.filter((e) => e.kind === 'subitem.set' && e.payload?.state).sort(byId);
+  const byPrefix = (evs, q) => evs.filter((e) => e.payload?.ulid && q.ulid?.startsWith(e.payload.ulid)).pop() || null;
+  const items = (doc.questions || []).map((q) => {
+    const add = byPrefix(adds, q);
+    const set = q.state ? byPrefix(sets, q) : null;
+    return {
+      body: q.body, ts: add?.ts || null, actor: add?.actor || null, via: 'subitem',
+      answer: q.state ? { body: q.state, ts: set?.ts || null, actor: set?.actor || null, id: set?.id || null } : null
+    };
+  });
   for (const n of ns) {
     if (consumed.has(n.id)) continue;
     if (ANSWER.test(n.body)) {
@@ -200,8 +212,10 @@ export function questions(doc, ns, now = Date.now(), consumed = new Set()) {
   }
   if (!items.length) return null;
   for (const q of items) {
-    const end = q.answer?.ts ? t(q.answer.ts) : now;
-    q.openFor = q.ts ? end - t(q.ts) : null;
+    // open: asked .. now. Answered: asked .. the answer's event; an answer
+    // with no event to date it has no duration rather than a ticking one.
+    const end = q.answer ? t(q.answer.ts) : now;
+    q.openFor = q.ts && end ? end - t(q.ts) : null;
   }
   const sources = [];
   if (items.some((i) => i.via === 'subitem')) sources.push('question subitems');
@@ -277,7 +291,7 @@ export function buildDossier(doc, history = [], now = Date.now()) {
     counts: ledgerCounts(history)
   };
   const consumed = new Set([d.contract, d.decisions, d.corrections].flatMap((i) => i?.fed || []));
-  d.questions = questions(doc, ns, now, consumed);
+  d.questions = questions(doc, history, ns, now, consumed);
   const fed = new Map();
   for (const [name, inst] of Object.entries(d)) for (const id of inst?.fed || []) fed.set(id, name);
   d.fed = fed;
