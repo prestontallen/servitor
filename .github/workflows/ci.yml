@@ -63,3 +63,4 @@ jobs:
       - run: ./tests/install-darwin.sh
       - run: ./tests/install-hermes.sh
       - run: ./tests/install-cursor.sh
+      - run: ./tests/install-docker.sh
