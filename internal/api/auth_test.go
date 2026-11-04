@@ -136,8 +136,10 @@ func TestActorMatrix(t *testing.T) {
 		// local: header attestation survives unchanged (criterion 5)
 		{"local claim honored", false, "", "", "human:preston", "human:preston", 201},
 		{"local default actor", false, "", "", "", "agent:test", 201},
-		// legacy bootstrap token from remote: header still attests (out of scope to change)
-		{"remote no credential, claim stands only with bootstrap token", true, "", "bootstrap", "human:preston", "", 401},
+		// legacy bootstrap token from remote: header still attests — that
+		// is what the bootstrap path is for
+		{"remote bootstrap token, claim stands", true, "", "bootstrap", "human:preston", "human:preston", 201},
+		{"remote bootstrap token, no claim", true, "", "bootstrap", "", "agent:test", 201},
 		// per-actor token: credential wins over any claim (criterion 4)
 		{"token claim overridden", true, "", tok, "human:preston", "agent:hermes", 201},
 		{"token no claim", true, "", tok, "", "agent:hermes", 201},
