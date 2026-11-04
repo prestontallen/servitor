@@ -80,6 +80,41 @@ func randomToken() string {
 	return hex.EncodeToString(b)
 }
 
+// ErrUsersExist means first-run bootstrap was attempted on a non-empty
+// users table.
+var ErrUsersExist = errors.New("users already exist")
+
+// CreateFirstUser inserts the first user, atomically only-if-empty — two
+// racing bootstrap requests cannot both win. The actor defaults to
+// human:<username> when empty.
+func (s *Store) CreateFirstUser(ctx context.Context, username, password, actor string) error {
+	if username == "" || password == "" {
+		return fmt.Errorf("username and password must not be empty")
+	}
+	if actor == "" {
+		actor = "human:" + username
+	}
+	tag, err := s.Pool.Exec(ctx,
+		`INSERT INTO users (username, actor, pass_hash)
+		 SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM users)`,
+		username, actor, HashPassword(password))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUsersExist
+	}
+	return nil
+}
+
+// UsersExist reports whether any user is provisioned. The GUI reads this
+// (unauthenticated) to choose the first-run setup view over the login view.
+func (s *Store) UsersExist(ctx context.Context) (bool, error) {
+	var n int
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n)
+	return n > 0, err
+}
+
 // CreateUser inserts a user with an argon2id-hashed password. The actor is
 // bound at creation and never changes.
 func (s *Store) CreateUser(ctx context.Context, username, password, actor string) error {

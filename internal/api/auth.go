@@ -87,13 +87,27 @@ func (h *HTTP) logout(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-// createUser is local-only: user administration runs from the daemon host
-// CLI, never from a network caller.
-func (h *HTTP) createUser(w http.ResponseWriter, r *http.Request) {
-	if !isLocal(r) {
-		writeErr(w, &APIError{Code: "unauthorized", Message: "user administration is local-only"})
-		return
+// authState is public: the GUI reads it to choose the first-run setup view
+// (no users yet) over the login view. It reveals only whether any user
+// exists.
+func (h *HTTP) authState(w http.ResponseWriter, r *http.Request) {
+	firstRun := true
+	if h.Auth != nil {
+		exists, err := h.Auth.Store.UsersExist(r.Context())
+		if err != nil {
+			writeErr(w, &APIError{Code: "internal", Message: err.Error()})
+			return
+		}
+		firstRun = !exists
 	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"first_run": firstRun})
+}
+
+// createUser is local-only once any user exists; on a fresh install (no
+// users) it is open to remote callers as first-run bootstrap. The actor
+// defaults to human:<username> on the first user.
+func (h *HTTP) createUser(w http.ResponseWriter, r *http.Request) {
 	if h.Auth == nil {
 		writeErr(w, &APIError{Code: "unauthorized", Message: "user auth not configured"})
 		return
@@ -103,9 +117,26 @@ func (h *HTTP) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, &APIError{Code: "invalid_event", Message: "body must be JSON {username, password, actor}"})
 		return
 	}
-	if err := h.Auth.Store.CreateUser(r.Context(), body.Username, body.Password, body.Actor); err != nil {
-		writeErr(w, &APIError{Code: "invalid_event", Message: err.Error()})
+	exists, err := h.Auth.Store.UsersExist(r.Context())
+	if err != nil {
+		writeErr(w, &APIError{Code: "internal", Message: err.Error()})
 		return
+	}
+	if exists && !isLocal(r) {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "user administration is local-only"})
+		return
+	}
+	if exists {
+		if err := h.Auth.Store.CreateUser(r.Context(), body.Username, body.Password, body.Actor); err != nil {
+			writeErr(w, &APIError{Code: "invalid_event", Message: err.Error()})
+			return
+		}
+	} else {
+		if err := h.Auth.Store.CreateFirstUser(r.Context(), body.Username, body.Password, body.Actor); err != nil {
+			// includes ErrUsersExist from a racing bootstrap
+			writeErr(w, &APIError{Code: "invalid_event", Message: err.Error()})
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

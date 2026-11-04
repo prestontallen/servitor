@@ -24,6 +24,7 @@ export function createAuth(fetchImpl = fetch) {
     await fetchImpl('/api/logout', { method: 'POST' });
     state.actor = '';
     state.needed = true;
+    state.mode = 'login';
   }
 
   // A 401 on any data read: the session is gone — clear the legacy token

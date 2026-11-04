@@ -53,7 +53,8 @@ func (h *HTTP) authed(next http.Handler) http.Handler {
 		// static assets and the login/logout endpoints are open; only the
 		// data API is guarded
 		if !strings.HasPrefix(r.URL.Path, "/api/") ||
-			r.URL.Path == "/api/login" || r.URL.Path == "/api/logout" {
+			r.URL.Path == "/api/login" || r.URL.Path == "/api/logout" ||
+			r.URL.Path == "/api/auth-state" || r.URL.Path == "/api/user" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -103,6 +104,7 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("GET /api/healthz", h.healthz)
 	mux.HandleFunc("POST /api/login", h.login)
 	mux.HandleFunc("POST /api/logout", h.logout)
+	mux.HandleFunc("GET /api/auth-state", h.authState)
 	mux.HandleFunc("POST /api/user", h.createUser)
 	mux.HandleFunc("POST /api/token", h.createToken)
 	mux.HandleFunc("GET /api/board", h.board)

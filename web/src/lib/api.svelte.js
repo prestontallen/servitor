@@ -12,23 +12,53 @@ const TOKEN_KEY = 'servitor_token';
 
 export const token = $state({ value: localStorage.getItem(TOKEN_KEY) || '' });
 
-// auth drives the shell: needed shows Login.svelte; actor is who logged in.
+// auth drives the shell: needed shows Login/Setup; actor is who logged in.
 // auth.js holds the logic against its own plain object; this $state is a
 // COPY, kept in step by sync() after every mutation — a $state proxy does
 // not track writes to the raw object behind it.
 const _auth = createAuth();
-export const auth = $state({ needed: false, actor: '', error: '' });
+export const auth = $state({ needed: false, actor: '', error: '', mode: 'login' });
 
 function sync() {
   auth.needed = _auth.state.needed;
   auth.actor = _auth.state.actor;
   auth.error = _auth.state.error;
+  auth.mode = _auth.state.mode || 'login';
 }
 
 export async function login(user, password) {
   const actor = await _auth.login(user, password);
   sync();
   return actor;
+}
+
+// First-run bootstrap: create the first user, then log in with it.
+export async function setup(user, password) {
+  auth.error = '';
+  const r = await fetch('/api/user', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: user, password, actor: '' })
+  });
+  if (!r.ok) {
+    auth.error = `could not create the user (${r.status})`;
+    throw new Error(auth.error);
+  }
+  return login(user, password);
+}
+
+// Boot-time check: with no users at all, the first page is the setup view.
+export async function initAuth() {
+  try {
+    const s = await fetch('/api/auth-state').then((r) => r.json());
+    if (s.first_run) {
+      _auth.state.needed = true;
+      _auth.state.mode = 'setup';
+      sync();
+    }
+  } catch {
+    // daemon unreachable: let the normal load path surface it
+  }
 }
 
 export async function logout() {

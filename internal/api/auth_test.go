@@ -300,6 +300,73 @@ func TestNoTokenStillGuards(t *testing.T) {
 	}
 }
 
+// TestFirstRunBootstrap: with zero users, a remote caller can create the
+// first user and log in; once a user exists, remote creation is refused
+// and auth-state flips.
+func TestFirstRunBootstrap(t *testing.T) {
+	h, st := authedHTTP(t)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/auth-state", nil)
+	req.RemoteAddr = "192.168.1.90:55555"
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"first_run":true`) {
+		t.Fatalf("auth-state: %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := `{"username":"preston","password":"pw","actor":""}`
+	req = httptest.NewRequest("POST", "/api/user", strings.NewReader(body))
+	req.RemoteAddr = "192.168.1.90:55555"
+	rec = httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("first-run create: %d %s", rec.Code, rec.Body.String())
+	}
+	// the created user's actor defaulted to human:preston and can log in
+	rec = login(t, h, "preston", "pw")
+	if rec.Code != 200 {
+		t.Fatalf("login after bootstrap: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/api/auth-state", nil)
+	rec = httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if strings.Contains(rec.Body.String(), `"first_run":true`) {
+		t.Error("auth-state still first_run after bootstrap")
+	}
+
+	// remote creation now refused, even authenticated
+	newTicket(t, h)
+	sess := login(t, h, "preston", "pw")
+	var cookie string
+	for _, c := range sess.Result().Cookies() {
+		if c.Name == "servitor_session" {
+			cookie = c.Value
+		}
+	}
+	req = httptest.NewRequest("POST", "/api/user", strings.NewReader(`{"username":"eve","password":"x","actor":""}`))
+	req.RemoteAddr = "192.168.1.90:55555"
+	req.AddCookie(&http.Cookie{Name: "servitor_session", Value: cookie})
+	rec = httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Errorf("remote second create: %d, want 401", rec.Code)
+	}
+	// same refusal, unauthenticated — and the status must be 401, not the
+	// default 500 (regression: unauthorized was missing from HTTPStatus)
+	req = httptest.NewRequest("POST", "/api/user", strings.NewReader(`{"username":"eve","password":"x","actor":""}`))
+	req.RemoteAddr = "192.168.1.90:55555"
+	rec = httptest.NewRecorder()
+	h.Routes().ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Errorf("remote unauth second create: %d, want 401", rec.Code)
+	}
+	// and a racing local-only double bootstrap loses too
+	if err := st.CreateFirstUser(context.Background(), "eve", "x", ""); err == nil {
+		t.Error("CreateFirstUser on non-empty table must fail")
+	}
+}
+
 // TestTokenActorBinding: the token's actor lands on the event, and the
 // legacy SERVITOR_TOKEN still authenticates as it did (criterion 7).
 func TestTokenActorBindingAndLegacyToken(t *testing.T) {

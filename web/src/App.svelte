@@ -10,13 +10,16 @@
   import { view, ui, show, loadBoard, loadArcs, routeFromLocation, onRouteChange } from './lib/state.svelte.js';
   import { connectStream } from './lib/live.svelte.js';
   import { viewForKey } from './lib/prompt.js';
-  import { auth } from './lib/api.svelte.js';
+  import { auth, initAuth } from './lib/api.svelte.js';
+  import Setup from './lib/Setup.svelte';
   import Login from './lib/Login.svelte';
   import { onMount } from 'svelte';
 
-  onMount(() => {
+  onMount(async () => {
     document.documentElement.dataset.mode = ui.mode;
     routeFromLocation();
+    await initAuth();
+    if (auth.needed && auth.mode === 'setup') return; // first run: setup first
     onRouteChange();
     loadBoard();
     loadArcs();
@@ -40,7 +43,11 @@
 <div class="crt-vignette" aria-hidden="true"></div>
 
 {#if auth.needed}
-  <Login />
+  {#if auth.mode === 'setup'}
+    <Setup />
+  {:else}
+    <Login />
+  {/if}
 {:else}
 <div class="shell crt-flicker">
   <Mast />
