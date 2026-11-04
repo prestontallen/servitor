@@ -1177,4 +1177,7 @@ restart
 wait_healthy
 echo "done — binaries in ${BIN_DIR}, skills linked into: $(skill_roots | tr '\n' ' ')"
 echo "servitor-mcp: source ${ENV_FILE} for SERVITOR_DSN$( [ -f "${ENV_FILE}" ] && grep -q SERVITOR_TOKEN "${ENV_FILE}" && echo '/SERVITOR_TOKEN' )"
+echo "user auth: create the first login user (and per-agent tokens) with:"
+echo "  printf '%s' 'password' | ${BIN_DIR}/servitor user add <username> human:<name>"
+echo "  ${BIN_DIR}/servitor token add agent:<name> [label]   # token printed once"
 report_skipped_skills

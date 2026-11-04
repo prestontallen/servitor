@@ -90,9 +90,12 @@ func main() {
 	svc := api.NewStoreService(s)
 	h := api.NewHTTP(svc)
 	h.GraphQL = graphql.NewHandler(svc)
+	h.Auth = &api.Authenticator{Store: s}
 	if tok := os.Getenv("SERVITOR_TOKEN"); tok != "" {
 		h.Token = tok
-		log.Printf("auth enabled (bearer token)")
+		log.Printf("auth enabled (bearer token bootstrap; user login available)")
+	} else {
+		log.Printf("user auth enabled (no bootstrap token set)")
 	}
 	log.Printf("servitord listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, h.Routes()))

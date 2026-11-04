@@ -268,4 +268,24 @@ func (c *HTTPClient) Ping(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/api/healthz", nil, nil)
 }
 
+// CreateUser provisions a local user via the daemon (local-only endpoint).
+// The password travels the request body, never a command line.
+func (c *HTTPClient) CreateUser(ctx context.Context, username, password, actor string) error {
+	return c.do(ctx, "POST", "/api/user", map[string]string{
+		"username": username, "password": password, "actor": actor}, nil)
+}
+
+// CreateToken mints a per-actor API token via the daemon (local-only
+// endpoint). The raw token comes back exactly once.
+func (c *HTTPClient) CreateToken(ctx context.Context, actor, label string) (string, error) {
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := c.do(ctx, "POST", "/api/token", map[string]string{
+		"actor": actor, "label": label}, &out); err != nil {
+		return "", err
+	}
+	return out.Token, nil
+}
+
 var _ Service = (*HTTPClient)(nil)

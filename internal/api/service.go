@@ -43,6 +43,8 @@ func (e *APIError) HTTPStatus() int {
 		return 422
 	case "unreachable":
 		return 503
+	case "unauthorized":
+		return 401
 	default:
 		return 500
 	}

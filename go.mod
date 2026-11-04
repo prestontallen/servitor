@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/vektah/gqlparser/v2 v2.5.37
+	golang.org/x/crypto v0.56.0
 )
 
 require (
@@ -23,6 +24,7 @@ require (
 	github.com/urfave/cli/v3 v3.11.0 // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 )
