@@ -587,6 +587,43 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		return encode(stdout, evs)
 
+	case "user", "token":
+		// local administration: servitor user add <username> <actor>
+		// (password on stdin); servitor token add <actor> [label]
+		if len(args) < 2 || args[0] != "add" {
+			say("usage: servitor user add <username> <actor>  (password on stdin)\n       servitor token add <actor> [label]")
+			return 2
+		}
+		if cmd == "user" {
+			if len(args) != 3 {
+				say("usage: servitor user add <username> <actor>")
+				return 2
+			}
+			pw, err := io.ReadAll(os.Stdin)
+			if err != nil || len(pw) == 0 {
+				say("password required on stdin")
+				return 2
+			}
+			if err := c.CreateUser(ctx, args[1], strings.TrimRight(string(pw), "\r\n"), args[2]); err != nil {
+				say("%v", err)
+				return 1
+			}
+			fmt.Fprintf(stdout, "user %s created (%s)\n", args[1], args[2])
+		} else {
+			actor := args[1]
+			label := ""
+			if len(args) > 2 {
+				label = args[2]
+			}
+			raw, err := c.CreateToken(ctx, actor, label)
+			if err != nil {
+				say("%v", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, raw) // shown once; never stored in the ledger
+		}
+		return 0
+
 	default:
 		usage(stderr)
 		return 2
@@ -648,6 +685,10 @@ func usage(w io.Writer) {
                                    feedback events across all tickets
   gate <ref> <gate>                contract_approved requires SERVITOR_HUMAN
   history <ref>                    full event timeline
+  user add <username> <actor>      create a login user (password on stdin;
+                                   local daemon only)
+  token add <actor> [label]        mint a per-actor API token (printed once;
+                                   local daemon only)
 
 env: SERVITOR_API (default http://localhost:27182), SERVITOR_ACTOR (default agent:cli),
      SERVITOR_AGENT (hint wording override; the actor name otherwise),

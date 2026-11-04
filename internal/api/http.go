@@ -32,6 +32,10 @@ type HTTP struct {
 	// auth guard. It lives in internal/api/graphql, which imports this
 	// package, so the daemon hands it in rather than Routes building it.
 	GraphQL http.Handler
+	// Auth, when set, enables user login (session cookie), per-actor API
+	// tokens and credential-bound actors. Nil = legacy behaviour only
+	// (SERVITOR_TOKEN / localhost exemption).
+	Auth *Authenticator
 	// Heartbeat is the SSE idle ping cadence; zero means DefaultHeartbeat.
 	Heartbeat time.Duration
 }
@@ -39,12 +43,17 @@ type HTTP struct {
 func NewHTTP(s Service) *HTTP { return &HTTP{Service: s} }
 
 func (h *HTTP) authed(next http.Handler) http.Handler {
-	if h.Token == "" {
+	// No SERVITOR_TOKEN and no user auth: dev mode, unguarded. With Auth
+	// set the guard always runs — remote callers need a credential even
+	// when no bootstrap token is configured.
+	if h.Token == "" && h.Auth == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// static assets are open; only API routes are guarded
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		// static assets and the login/logout endpoints are open; only the
+		// data API is guarded
+		if !strings.HasPrefix(r.URL.Path, "/api/") ||
+			r.URL.Path == "/api/login" || r.URL.Path == "/api/logout" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -52,12 +61,21 @@ func (h *HTTP) authed(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// per-actor token or session cookie: a bound credential fixes the
+		// actor of every write this request makes
+		if actor, ok := h.resolveCredential(r.Context(), r); ok {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), boundActorKey, actor)))
+			return
+		}
 		auth := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if token == "" {
-			token = r.URL.Query().Get("token") // browser GUI: ?token=
+			token = r.URL.Query().Get("token") // browser GUI: ?token= (bootstrap)
 		}
-		if token != h.Token {
+		// An empty token never passes: with no SERVITOR_TOKEN configured
+		// (h.Token == "") there is nothing to match, so any remote request
+		// must have resolved a credential above.
+		if token == "" || token != h.Token {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{
@@ -83,6 +101,10 @@ func isLocal(r *http.Request) bool {
 func (h *HTTP) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", h.healthz)
+	mux.HandleFunc("POST /api/login", h.login)
+	mux.HandleFunc("POST /api/logout", h.logout)
+	mux.HandleFunc("POST /api/user", h.createUser)
+	mux.HandleFunc("POST /api/token", h.createToken)
 	mux.HandleFunc("GET /api/board", h.board)
 	mux.HandleFunc("GET /api/tickets", h.list)
 	mux.HandleFunc("GET /api/arcs", h.arcs)
@@ -332,9 +354,13 @@ func (h *HTTP) append(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, &APIError{Code: "invalid_event", Message: "body must be a JSON event: " + err.Error()})
 		return
 	}
-	// header override: the transport may attest the actor (CLI/MCP pass their
-	// identity; browsers can't be trusted with it)
-	if a := r.Header.Get("X-Servitor-Actor"); a != "" {
+	// Credential-bound actor: a per-actor token or session fixes the actor
+	// of every write it authorizes — the credential wins over any claimed
+	// header. Local and legacy-token requests keep today's header
+	// attestation (SERVITOR_ACTOR from the CLI).
+	if bound := actorFromContext(r.Context()); bound != "" {
+		cmd.Actor = bound
+	} else if a := r.Header.Get("X-Servitor-Actor"); a != "" {
 		cmd.Actor = a
 	}
 	// host and session travel the same way: the CLI stamps every write

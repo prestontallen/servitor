@@ -10,6 +10,8 @@
   import { view, ui, show, loadBoard, loadArcs, routeFromLocation, onRouteChange } from './lib/state.svelte.js';
   import { connectStream } from './lib/live.svelte.js';
   import { viewForKey } from './lib/prompt.js';
+  import { auth } from './lib/api.svelte.js';
+  import Login from './lib/Login.svelte';
   import { onMount } from 'svelte';
 
   onMount(() => {
@@ -37,6 +39,9 @@
 <div class="crt-scan" aria-hidden="true"></div>
 <div class="crt-vignette" aria-hidden="true"></div>
 
+{#if auth.needed}
+  <Login />
+{:else}
 <div class="shell crt-flicker">
   <Mast />
   <main>
@@ -49,6 +54,7 @@
   </main>
   <Prompt />
 </div>
+{/if}
 
 <style>
   .shell {
