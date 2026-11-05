@@ -35,3 +35,24 @@ export function createAuth(fetchImpl = fetch) {
 
   return { state, login, logout, onDenied };
 }
+
+// Boot decision, pure and node:test covered. authStateFetch -> {first_run};
+// meFetch -> /api/me (200 with {actor} on a live session, 401 otherwise).
+// setup: no users yet; login: users exist but this browser has no session;
+// ok: session live, actor attached.
+export async function boot(authStateFetch, meFetch) {
+  try {
+    const s = await authStateFetch();
+    if (s && s.first_run) return { mode: 'setup' };
+  } catch {
+    // daemon unreachable: fall through and let the data loads surface it
+    return { mode: 'ok', actor: '' };
+  }
+  try {
+    const me = await meFetch();
+    if (me.ok) return { mode: 'ok', actor: (await me.json()).actor };
+  } catch {
+    // fall through to login
+  }
+  return { mode: 'login' };
+}

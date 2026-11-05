@@ -105,6 +105,8 @@ func (h *HTTP) Routes() http.Handler {
 	mux.HandleFunc("POST /api/login", h.login)
 	mux.HandleFunc("POST /api/logout", h.logout)
 	mux.HandleFunc("GET /api/auth-state", h.authState)
+	mux.HandleFunc("GET /api/me", h.me)
+	mux.HandleFunc("POST /api/password", h.changePassword)
 	mux.HandleFunc("POST /api/user", h.createUser)
 	mux.HandleFunc("POST /api/token", h.createToken)
 	mux.HandleFunc("GET /api/board", h.board)

@@ -169,6 +169,59 @@ func (s *Store) SessionActor(ctx context.Context, raw string) (string, bool) {
 	return actor, err == nil
 }
 
+// SessionUser resolves a session cookie to its user's username and actor.
+func (s *Store) SessionUser(ctx context.Context, raw string) (string, string, bool) {
+	var username, actor string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT u.username, u.actor FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1`,
+		hashToken(raw)).Scan(&username, &actor)
+	return username, actor, err == nil
+}
+
+// SessionUserID resolves a session cookie to its user row id.
+func (s *Store) SessionUserID(ctx context.Context, raw string) (int64, bool) {
+	var id int64
+	err := s.Pool.QueryRow(ctx,
+		`SELECT user_id FROM sessions WHERE token_hash = $1`, hashToken(raw)).Scan(&id)
+	return id, err == nil
+}
+
+// ChangePassword verifies the current password, rehashes the new one, and
+// revokes every other session of the user — the session that changed the
+// password survives.
+func (s *Store) ChangePassword(ctx context.Context, userID int64, current, keepSessionRaw, next string) error {
+	if next == "" {
+		return fmt.Errorf("new password must not be empty")
+	}
+	var stored, keepHash string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT u.pass_hash, COALESCE(s.token_hash, '')
+		 FROM users u
+		 LEFT JOIN sessions s ON s.user_id = u.id AND s.token_hash = $2
+		 WHERE u.id = $1`, userID, hashToken(keepSessionRaw)).Scan(&stored, &keepHash)
+	if err != nil {
+		return fmt.Errorf("invalid credentials")
+	}
+	if !VerifyPassword(stored, current) {
+		return fmt.Errorf("invalid credentials")
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET pass_hash = $1 WHERE id = $2`, HashPassword(next), userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`,
+		userID, keepHash); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // DeleteSession revokes one session (logout).
 func (s *Store) DeleteSession(ctx context.Context, raw string) error {
 	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, hashToken(raw))

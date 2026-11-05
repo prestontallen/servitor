@@ -2,7 +2,7 @@
 // verb and at most one argument; the component only dispatches on the
 // result. Views are the hash routes the app already serves.
 
-export const VIEWS = ['board', 'time', 'arcs', 'journal'];
+export const VIEWS = ['board', 'time', 'arcs', 'journal', 'settings'];
 const ALIASES = { b: 'board', t: 'time', a: 'arcs', j: 'journal', ledger: 'journal' };
 
 export const HELP = 'verbs: board · time · arcs · journal · ctx <ref> · help';

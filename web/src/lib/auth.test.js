@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAuth } from './auth.js';
+import { createAuth, boot } from './auth.js';
 
 const ok = (body) => ({
   ok: true,
@@ -31,6 +31,16 @@ test('login 401 shows one generic message — unknown user indistinguishable fro
     assert.equal(a.state.error, 'Invalid user or password');
     assert.equal(a.state.needed, false);
   }
+});
+
+test('boot: first_run wins, then a live session, then login', async () => {
+  assert.deepEqual(await boot(async () => ({ first_run: true }), async () => { throw 0; }), { mode: 'setup' });
+  assert.deepEqual(
+    await boot(async () => ({ first_run: false }), async () => ({ ok: true, json: async () => ({ actor: 'human:preston' }) })),
+    { mode: 'ok', actor: 'human:preston' }
+  );
+  assert.deepEqual(await boot(async () => ({ first_run: false }), async () => ({ ok: false })), { mode: 'login' });
+  assert.deepEqual(await boot(async () => { throw new Error('down'); }), { mode: 'ok', actor: '' });
 });
 
 test('logout flips needed and clears actor', async () => {

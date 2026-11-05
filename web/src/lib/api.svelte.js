@@ -6,7 +6,7 @@
 //
 // The logic lives in auth.js (rune-free, node:test covered); this module
 // binds it to the $state the shell reads.
-import { createAuth } from './auth.js';
+import { createAuth, boot } from './auth.js';
 
 const TOKEN_KEY = 'servitor_token';
 
@@ -47,18 +47,39 @@ export async function setup(user, password) {
   return login(user, password);
 }
 
-// Boot-time check: with no users at all, the first page is the setup view.
+// Boot-time check: with no users at all, the first page is the setup view;
+// with a live session, learn who we are; with neither, show login.
 export async function initAuth() {
-  try {
-    const s = await fetch('/api/auth-state').then((r) => r.json());
-    if (s.first_run) {
-      _auth.state.needed = true;
-      _auth.state.mode = 'setup';
-      sync();
-    }
-  } catch {
-    // daemon unreachable: let the normal load path surface it
+  const outcome = await boot(
+    () => fetch('/api/auth-state').then((r) => r.json()),
+    () => fetch('/api/me')
+  );
+  if (outcome.mode === 'setup') {
+    _auth.state.needed = true;
+    _auth.state.mode = 'setup';
+  } else if (outcome.mode === 'login') {
+    _auth.state.needed = true;
+    _auth.state.mode = 'login';
+  } else {
+    _auth.state.actor = outcome.actor;
   }
+  sync();
+}
+
+// Change the session user's password. Other sessions are revoked
+// server-side; this one survives.
+export async function changePassword(current, next) {
+  auth.error = '';
+  const r = await fetch('/api/password', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ current, new: next })
+  });
+  if (!r.ok) {
+    auth.error = r.status === 401 ? 'current password is wrong' : `change failed (${r.status})`;
+    throw new Error(auth.error);
+  }
+  return true;
 }
 
 export async function logout() {
