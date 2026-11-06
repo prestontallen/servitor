@@ -13,6 +13,7 @@
   import { auth, initAuth } from './lib/api.svelte.js';
   import Setup from './lib/Setup.svelte';
   import Login from './lib/Login.svelte';
+  import Settings from './lib/Settings.svelte';
   import { onMount } from 'svelte';
 
   onMount(async () => {
@@ -55,6 +56,7 @@
     {#if view.name === 'arcs'}<Arcs />{/if}
     {#if view.name === 'timeline'}<Timeline />{/if}
     {#if view.name === 'board'}<Board />{/if}
+    {#if view.name === 'settings'}<Settings />{/if}
     {#if view.name === 'time'}<Time />{/if}
     {#if view.name === 'journal'}<Journal />{/if}
     {#if view.name === 'ticket'}<Ticket />{/if}

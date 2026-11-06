@@ -169,6 +169,57 @@ func (h *HTTP) createToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"token": raw, "actor": body.Actor})
 }
 
+// me returns who the session belongs to: {user, actor}. 401 without a
+// valid session cookie.
+func (h *HTTP) me(w http.ResponseWriter, r *http.Request) {
+	if h.Auth == nil {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "user auth not configured"})
+		return
+	}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "no session"})
+		return
+	}
+	user, actor, ok := h.Auth.Store.SessionUser(r.Context(), c.Value)
+	if !ok {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "no session"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"user": user, "actor": actor})
+}
+
+// changePassword: the session user changes their own password. The current
+// password is required; other sessions are revoked, this one survives.
+func (h *HTTP) changePassword(w http.ResponseWriter, r *http.Request) {
+	if h.Auth == nil {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "user auth not configured"})
+		return
+	}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "no session"})
+		return
+	}
+	userID, ok := h.Auth.Store.SessionUserID(r.Context(), c.Value)
+	if !ok {
+		writeErr(w, &APIError{Code: "unauthorized", Message: "no session"})
+		return
+	}
+	var body struct{ Current, New string }
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, &APIError{Code: "invalid_event", Message: "body must be JSON {current, new}"})
+		return
+	}
+	if err := h.Auth.Store.ChangePassword(r.Context(), userID, body.Current, c.Value, body.New); err != nil {
+		writeErr(w, &APIError{Code: "unauthorized", Message: err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
 // resolveCredential authenticates a remote request. Bearer per-actor tokens
 // win over the session cookie (an agent never carries both, but the order
 // is deterministic). Returns the bound actor and whether a bound credential

@@ -3,6 +3,7 @@
   // itself and the board), the mode toggle, and the F-key row.
   import { view, show, ui, setMode, board } from './state.svelte.js';
   import { live } from './live.svelte.js';
+  import { auth, logout } from './api.svelte.js';
   import { VIEWS } from './prompt.js';
 
   const statusText = $derived({ connecting: 'dialing', live: 'nominal', down: 'signal lost' }[live.status]);
@@ -14,7 +15,7 @@
       blocked: c.filter((x) => x.status === 'blocked').length
     };
   });
-  const LABEL = { board: 'board', time: 'time', arcs: 'arcs', journal: 'journal' };
+  const LABEL = { board: 'board', time: 'time', arcs: 'arcs', journal: 'journal', settings: 'settings' };
   const current = $derived(view.name === 'timeline' ? 'arcs' : view.name);
 </script>
 
@@ -28,6 +29,10 @@
     <button class="mode" onclick={() => setMode(ui.mode === 'dark' ? 'light' : 'dark')} title="Toggle light/dark" aria-label="Toggle light/dark mode">
       {ui.mode === 'dark' ? '☀' : '☾'}
     </button>
+    {#if auth.actor}
+      <button class="who" onclick={() => show('settings')} title="Settings — {auth.actor}">{auth.actor}</button>
+      <button class="mode" onclick={() => logout().then(() => location.reload())} title="Log out" aria-label="Log out">⏻</button>
+    {/if}
   </div>
   <nav class="fkeys" aria-label="views">
     {#each VIEWS as v, i (v)}
@@ -62,6 +67,7 @@
   .warn { color: var(--blood); }
   .st { margin-left: 6px; }
   .mode { margin-left: auto; align-self: flex-start; font-size: 14px; padding: 2px 8px; text-transform: none; letter-spacing: 0; }
+  .who { align-self: flex-start; font-size: 14px; padding: 2px 8px; background: transparent; border: 1px solid #3f4a33; color: inherit; cursor: pointer; text-transform: none; letter-spacing: 0; }
   .fkeys { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
   .fkey {
     border: none; border-bottom: 1px solid transparent; padding: 3px 4px;
