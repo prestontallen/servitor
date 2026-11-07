@@ -3,6 +3,7 @@
   // (dossier.js). Gates as a ✠ strip, the contract as a signed form, the
   // criteria as a scorecard with glyphs, then the ledger newest first.
   import { get } from './api.svelte.js';
+import { auth } from './api.svelte.js';
   import { view, arcs, openArc, kindGlyph, fmtTs, relTs, eventText } from './state.svelte.js';
   import { buildDossier } from './dossier.js';
   import DossierTimeline from './DossierTimeline.svelte';
@@ -11,6 +12,53 @@
   let doc = $state(null);
   let error = $state(null);
   let history = $state([]);
+  let actionBusy = $state(false);
+  let actionError = $state(null);
+  let noteText = $state('');
+  let answerText = $state({});
+  let statusChoice = $state('active');
+
+  async function postEvent(kind, payload, extra = {}) {
+    actionBusy = true;
+    actionError = null;
+    try {
+      const r = await fetch(`/api/events`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ticket: doc.ulid, kind, payload, ...extra })
+      });
+      if (r.status === 401) { actionError = 'unauthorized'; return; }
+      if (!r.ok) { actionError = `${r.status} ${await r.text()}`; return; }
+      // refresh
+      doc = await get(`/api/ticket/${view.ticketRef}`);
+      history = await get(`/api/ticket/${view.ticketRef}/history?limit=500`);
+    } catch (e) {
+      actionError = e.message;
+    } finally {
+      actionBusy = false;
+    }
+  }
+
+  async function approveGate(g) {
+    await postEvent('gate', { gate: g });
+  }
+
+  async function setStatus() {
+    await postEvent('status.set', { status: statusChoice });
+  }
+
+  async function addNote() {
+    if (!noteText.trim()) return;
+    await postEvent('note', { v: noteText.trim() });
+    noteText = '';
+  }
+
+  async function answerQuestion(q, prefix) {
+    const text = (answerText[prefix] || '').trim();
+    if (!text) return;
+    await postEvent('subitem.set', { ulid: prefix, state: text });
+    answerText[prefix] = '';
+  }
 
   // ledger fold: closed by default; a kind pill opens it filtered to that kind
   let ledgerOpen = $state(false);
@@ -367,6 +415,50 @@
       <section class="frame inst links">
         <span class="cap">Links</span>
         <ul class="glyphs">{#each d.links.items as l}<li><span class="g">↗</span><a href={l.url} target="_blank" rel="noreferrer">{l.url}</a></li>{/each}</ul>
+      </section>
+    {/if}
+
+    <!-- ================= actions: human controls ================= -->
+    {#if auth.actor}
+      <section class="frame inst actions">
+        <span class="cap">Actions · {auth.actor}</span>
+        {#if actionError}<div class="login-error">{actionError}</div>{/if}
+        <div class="action-row">
+          <span class="label">gates</span>
+          {#each GATES as g (g)}
+            {#if !gateAt[g]}
+              <button disabled={actionBusy} onclick={() => approveGate(g)}>approve {g}</button>
+            {/if}
+          {/each}
+        </div>
+        <div class="action-row">
+          <span class="label">status</span>
+          <select bind:value={statusChoice}>
+            <option value="active">active</option>
+            <option value="blocked">blocked</option>
+            <option value="done">done</option>
+            <option value="dropped">dropped</option>
+          </select>
+          <button disabled={actionBusy} onclick={setStatus}>set</button>
+        </div>
+        {#if doc.questions?.length}
+          <div class="action-row col">
+            <span class="label">answer questions</span>
+            {#each doc.questions as q (q.ulid)}
+              {#if !q.state}
+                <div class="qanswer">
+                  <input bind:value={answerText[q.ulid]} placeholder="answer…" />
+                  <button disabled={actionBusy} onclick={() => answerQuestion(q, q.ulid)}>answer</button>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+        <div class="action-row col">
+          <span class="label">note</span>
+          <textarea bind:value={noteText} rows="2" placeholder="note…"></textarea>
+          <button disabled={actionBusy} onclick={addNote}>add note</button>
+        </div>
       </section>
     {/if}
 
