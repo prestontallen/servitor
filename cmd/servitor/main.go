@@ -624,6 +624,9 @@ func run(args []string, stdout, stderr io.Writer, c *api.HTTPClient, env func(st
 		}
 		return 0
 
+	case "upgrade", "update":
+		return cmdUpgrade(stdout, stderr)
+
 	default:
 		usage(stderr)
 		return 2
@@ -689,6 +692,7 @@ func usage(w io.Writer) {
                                    local daemon only)
   token add <actor> [label]        mint a per-actor API token (printed once;
                                    local daemon only)
+  upgrade (alias update)           self-update from the latest GitHub release
 
 env: SERVITOR_API (default http://localhost:27182), SERVITOR_ACTOR (default agent:cli),
      SERVITOR_AGENT (hint wording override; the actor name otherwise),
