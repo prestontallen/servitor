@@ -26,17 +26,17 @@
     <div class="login-title">servitor</div>
     <label>
       user
-      <input type="text" bind:value={user} autocomplete="username" autofocus />
+      <input type="text" bind:value={user} autocomplete="username" autofocus disabled={busy} />
     </label>
     <label>
       password
-      <input type="password" bind:value={password} autocomplete="current-password" />
+      <input type="password" bind:value={password} autocomplete="current-password" disabled={busy} />
     </label>
     {#if auth.error}
       <div class="login-error" role="alert">{auth.error}</div>
     {/if}
-    <button type="submit" disabled={busy || !user || !password}>
-      {busy ? '...' : 'log in'}
+    <button type="submit" disabled={busy || !user || !password} aria-busy={busy}>
+      {#if busy}<span class="spinner" aria-hidden="true"></span> logging in…{:else}log in{/if}
     </button>
   </form>
 </div>
@@ -93,5 +93,19 @@
   button:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .spinner {
+    display: inline-block;
+    width: 0.7em;
+    height: 0.7em;
+    margin-right: 0.4em;
+    vertical-align: middle;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
